@@ -38,3 +38,17 @@ class PlanToolResponse(BaseModel):
     status: str
     file_path: str
     summary: str
+
+
+def build_plan_tool_definition() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": "plan_tool",
+            "description": (
+                "Create or update the execution plan snapshot for the current run. "
+                "Always provide the complete plan payload."
+            ),
+            "parameters": PlanToolRequest.model_json_schema(),
+        },
+    }

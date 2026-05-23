@@ -9,9 +9,10 @@ def test_llm_executor_can_call_model() -> None:
     response = executor.complete(
         LlmRequest(
             system_prompt="You are a helpful assistant.",
-            tool_prompt="",
             context_prompt="",
             messages=[LlmMessage(role="user", content="Say hello in one short sentence.")],
+            tools=[],
+            tool_choice=None,
             model=settings.test_model or "",
         )
     )

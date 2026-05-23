@@ -17,7 +17,6 @@ class OpenAICompatibleProvider:
     def complete(self, request: LlmRequest) -> LlmResponse:
         messages = [
             {"role": "system", "content": request.system_prompt},
-            {"role": "system", "content": request.tool_prompt},
             {"role": "system", "content": request.context_prompt},
             *({"role": message.role, "content": message.content} for message in request.messages),
         ]
@@ -27,6 +26,10 @@ class OpenAICompatibleProvider:
             "messages": messages,
             "temperature": 0.2,
         }
+        if request.tools:
+            payload["tools"] = request.tools
+        if request.tool_choice is not None:
+            payload["tool_choice"] = request.tool_choice
 
         response = httpx.post(
             f"{self.base_url}/chat/completions",

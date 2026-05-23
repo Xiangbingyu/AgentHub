@@ -5,6 +5,7 @@ from app.models.agent_run import AgentRunModel
 from app.models.input_event import InputEventModel, InputEventType
 from app.runtime.prompt_assembler import PromptAssembler
 from app.runtime.runtime_assembler import RuntimeBundle
+from app.runtime.tool_registry import ToolRegistry
 
 
 def test_prompt_assembler_builds_bundle() -> None:
@@ -22,7 +23,7 @@ def test_prompt_assembler_builds_bundle() -> None:
             agent_kind="orchestrator",
         ),
         prompt_profile="orchestrator",
-        toolset={"plan_tool": object(), "question_tool": object(), "delegate_tool": object()},
+        tool_registry=ToolRegistry(),
     )
     input_event = InputEventModel(
         input_id=uuid4(),
@@ -35,5 +36,4 @@ def test_prompt_assembler_builds_bundle() -> None:
     bundle = assembler.assemble(runtime, input_event)
 
     assert "role=orchestrator" in bundle.system_prompt
-    assert "Create and maintain a structured plan snapshot" in bundle.tool_prompt
     assert "input_type=user_input" in bundle.context_prompt

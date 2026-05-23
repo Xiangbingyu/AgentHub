@@ -13,9 +13,10 @@ class LlmMessage:
 @dataclass(slots=True)
 class LlmRequest:
     system_prompt: str
-    tool_prompt: str
     context_prompt: str
     messages: list[LlmMessage] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    tool_choice: dict[str, Any] | str | None = None
     model: str = ""
 
 
