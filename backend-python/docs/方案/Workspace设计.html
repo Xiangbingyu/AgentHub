@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentHub Workspace 方案说明</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #667085;
+      --line: #dbe3f0;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --orange: #ea580c;
+      --orange-soft: #ffedd5;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, #dbeafe 0, transparent 28%),
+        radial-gradient(circle at top left, #ede9fe 0, transparent 24%),
+        var(--bg);
+      line-height: 1.6;
+    }
+
+    .page {
+      width: min(1200px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 36px 0 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #2563eb 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 40px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 38px;
+      line-height: 1.15;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 880px;
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 16px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 13px;
+    }
+
+    .section {
+      background: var(--panel);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-top: 24px;
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+    }
+
+    .section p.lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .tag.primary { background: var(--primary-soft); color: var(--primary); }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.orange { background: var(--orange-soft); color: var(--orange); }
+    .tag.purple { background: var(--purple-soft); color: var(--purple); }
+
+    .layer-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .layer {
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--primary);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .layer strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 17px;
+    }
+
+    .layer span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .flow-box {
+      flex: 1 1 180px;
+      min-width: 180px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      padding: 16px;
+      background: #fff;
+      text-align: center;
+    }
+
+    .flow-box strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .flow-box p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .arrow {
+      color: var(--primary);
+      font-size: 28px;
+      font-weight: 700;
+      padding: 0 4px;
+    }
+
+    .mini-note {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .rule-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .rule {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .rule strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .rule p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .mode {
+      border-radius: 18px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+    }
+
+    .mode h3 {
+      margin: 0 0 10px;
+    }
+
+    .mode ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .mode li + li {
+      margin-top: 8px;
+    }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2,
+      .grid-3,
+      .rule-list,
+      .mode-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .page {
+        width: min(100vw - 24px, 1200px);
+      }
+
+      .hero {
+        padding: 28px 22px;
+      }
+
+      .hero h1 {
+        font-size: 30px;
+      }
+
+      .flow {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .arrow {
+        align-self: center;
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>AgentHub Workspace 方案</h1>
+      <p>
+        这套方案的核心目标，是把“聊天负责沟通，Workspace 负责落地”明确拆开。聊天默认只是协作入口，
+        只有挂载了 Workspace，Agent 才能进入代码协作态，并围绕项目、Proposal、Sandbox 和版本记录展开稳定协作。
+      </p>
+      <div class="pill-row">
+        <span class="pill">手动创建 Workspace</span>
+        <span class="pill">聊天需挂载后才能代码协作</span>
+        <span class="pill">Proposal Branch 驱动合并</span>
+        <span class="pill">Sandbox 基于基础镜像启动</span>
+        <span class="pill">支持个人与群聊共创</span>
+        <span class="pill">切换 Workspace 会清空当前执行态上下文</span>
+        <span class="pill">Confirm、Push、Deploy 三阶段分离</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>一、整体分层</h2>
+      <p class="lead">
+        顶层增加一个 Workspace 总层，下面保留现有五层结构。Workspace 不是账号天然唯一绑定的默认空间，而是由用户按需创建。
+      </p>
+      <div class="layer-stack">
+        <div class="layer">
+          <strong>1. Workspace</strong>
+          <span>用户手动创建的顶层协作空间，可用于个人开发或多人共创，是项目、Proposal、版本与执行上下文的持久化边界。</span>
+        </div>
+        <div class="layer">
+          <strong>2. Project Workspace</strong>
+          <span>Workspace 下某个项目的持久化工作区，用于承载源码、配置、项目级 Proposal 与版本历史；在接入 Git 后，这一层底层绑定一个 Git Repository。</span>
+        </div>
+        <div class="layer">
+          <strong>3. Proposal Pool</strong>
+          <span>项目级待确认变更池，用于汇总多个 Agent 在 Sandbox 中产出的 Diff、测试结果、预览链接与风险说明；在接入 Git 后，可映射为一组待确认的 Proposal Branch。</span>
+        </div>
+        <div class="layer">
+          <strong>4. Agent Sandbox</strong>
+          <span>某个 Agent 在某次会话或任务中的临时执行环境，基于 Project Workspace 快照创建，用于编码、测试、构建与预览；在 Git 模式下，本质上是基于基线提交 checkout 出来的工作副本。平台在云端维护默认基础镜像，至少包含 git、基础 shell 与常用工具；每次创建 Sandbox 时，都基于该镜像拉起临时环境，可从缓存恢复，也可重新构建，任务结束后自动销毁。</span>
+        </div>
+        <div class="layer">
+          <strong>5. Execution Environment</strong>
+          <span>对本地、容器、远程沙箱、云开发环境等执行载体的统一抽象，用于承载 Sandbox 运行。当 Sandbox 需要运行测试、构建或预览时，Execution Environment 应根据项目配置进一步准备依赖环境，必要时直接切换到 Docker 或容器化执行模式。</span>
+        </div>
+        <div class="layer">
+          <strong>6. Version History</strong>
+          <span>Proposal 被确认并应用后形成的项目级版本记录，用于回看、对比、审计与回滚；在 Git 模式下，可直接映射为 commit、merge 和 tag 历史。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>二、核心设计原则</h2>
+      <p class="lead">这套方案试图解决“聊天上下文”“代码落地”“多人协作”“Agent 并行执行”之间容易混淆的问题。</p>
+      <div class="grid-3">
+        <div class="card">
+          <span class="tag primary">沟通与落地分离</span>
+          <h3>聊天不是代码真源</h3>
+          <p>聊天负责讨论、拆解、汇报；Workspace 和 Project Workspace 才是真正承接代码、文件与版本的持久化边界。</p>
+        </div>
+        <div class="card">
+          <span class="tag green">执行与持久化分离</span>
+          <h3>Sandbox 不直接落盘</h3>
+          <p>Agent 先在临时 Sandbox 内工作，结果以 Proposal 的形式进入确认流程，而不是直接覆盖项目真源。</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">协作与权限分离</span>
+          <h3>Workspace 不等于全量可见</h3>
+          <p>Agent 默认只应访问当前会话绑定且已授权的 Project Workspace，而不是自动看到所有工作区与项目。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>三、会话进入代码协作态流程</h2>
+      <p class="lead">只有当聊天挂载了 Workspace，Agent 才能开始实际的工程协作。</p>
+      <div class="flow">
+        <div class="flow-box">
+          <strong>创建聊天</strong>
+          <p>单聊或群聊先作为普通沟通容器存在</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>挂载 Workspace</strong>
+          <p>明确当前会话对应的协作空间与落地区域</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>绑定 Project Workspace</strong>
+          <p>让 Agent 在具体项目范围内执行任务</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>创建 Agent Sandbox</strong>
+          <p>基于基础镜像和项目快照拉起临时环境，进入编码、测试、构建与预览</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>进入代码协作态</strong>
+          <p>允许读写文件、提交 Proposal、沉淀版本记录</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        设计约束：未挂载 Workspace 的聊天仍然可以用于需求讨论、任务拆解、Diff 解释和结果汇报，但不直接修改项目文件。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>四、Proposal 驱动的代码落地流程</h2>
+      <p class="lead">Agent 负责产出，Workspace 负责落地，Proposal Pool 负责把两者安全连接起来；在接入 Git 后，这套流程会映射为 branch、merge 与版本沉淀。</p>
+      <div class="flow">
+        <div class="flow-box">
+          <strong>Project Workspace</strong>
+          <p>作为项目真源，基于当前主线生成快照供 Agent 使用</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Agent Sandbox</strong>
+          <p>Agent 在隔离环境中基于 proposal branch 写代码、跑测试、产出预览；测试前按项目配置补齐依赖环境，必要时进入 Docker 模式</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Proposal Pool</strong>
+          <p>汇总 Proposal Branch 的 Diff、测试结果、风险说明与预览链接</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Confirm（Merge）</strong>
+          <p>用户或 Orchestrator 对 Proposal 审阅后，决定是否合并进项目主线</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Version History</strong>
+          <p>Proposal 合并后更新项目真源，并生成新的项目版本记录</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        这样做的好处是：即使多个 Agent 并行工作，也不会直接污染项目真源；所有修改都能被审阅、追踪和回滚，且底层可以自然映射到 Git 分支与合并策略。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>五、单聊与群聊绑定方式</h2>
+      <p class="lead">同样是聊天入口，单聊和群聊在 Workspace 绑定与权限控制上需要区分处理。</p>
+      <div class="mode-grid">
+        <div class="mode">
+          <span class="tag primary">单聊模式</span>
+          <h3>个人开发或个人委派</h3>
+          <ul>
+            <li>用户先创建或选择一个 Workspace。</li>
+            <li>单聊挂载该 Workspace 后，Agent 才能进入代码协作态。</li>
+            <li>用户可基于不同 Workspace 创建不同会话，分别处理不同项目或任务。</li>
+            <li>已进入开发态的会话，优先新建或派生会话，而不是频繁直接切换 Workspace。</li>
+          </ul>
+        </div>
+        <div class="mode">
+          <span class="tag orange">群聊模式</span>
+          <h3>多人协作或多 Agent 共创</h3>
+          <ul>
+            <li>群聊在进入共创模式前，也必须绑定一个 Workspace。</li>
+            <li>所有成员和多个 Agent 的产出统一落在该 Workspace 下，避免落到某个成员个人私有空间。</li>
+            <li>Workspace 切换应由管理员执行，第一版可先约定群主默认拥有该权限。</li>
+            <li>Proposal、版本记录与项目文件都以该群聊绑定的 Workspace 为归属边界。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>六、关键规则总表</h2>
+      <p class="lead">把适合产品实现与答辩说明的规则集中整理成表，方便后续直接引用。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>规则名称</th>
+            <th>规则内容</th>
+            <th>设计目的</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Workspace 创建规则</td>
+            <td>Workspace 不是账号天然唯一绑定，而是由用户按需手动创建。</td>
+            <td>支持一个用户管理多个独立项目域，也支持后续扩展到共享工作区。</td>
+          </tr>
+          <tr>
+            <td>聊天挂载规则</td>
+            <td>聊天只有在挂载 Workspace 后，Agent 才能进入代码协作态。</td>
+            <td>把普通讨论与真实工程修改分开，避免聊天直接污染项目真源。</td>
+          </tr>
+          <tr>
+            <td>会话绑定规则</td>
+            <td>一个会话在任意时刻只应绑定一个 Workspace。</td>
+            <td>保持当前上下文、文件归属和 Proposal 归属清晰一致。</td>
+          </tr>
+          <tr>
+            <td>切换清空规则</td>
+            <td>切换 Workspace 时，应清空当前 Workspace 部分的聊天内容与执行态上下文。</td>
+            <td>避免不同项目之间的上下文串扰和错误继承。</td>
+          </tr>
+          <tr>
+            <td>权限边界规则</td>
+            <td>Agent 默认只访问当前会话绑定且已授权的 Project Workspace。</td>
+            <td>确保多项目并存时的权限最小化和信息隔离。</td>
+          </tr>
+          <tr>
+            <td>Proposal 提交流程规则</td>
+            <td>Agent 不直接写回项目真源，而是先在 Sandbox 中生成 Proposal 再进入确认流程。</td>
+            <td>提升稳定性、可追溯性和多人协作下的并发安全。</td>
+          </tr>
+          <tr>
+            <td>Sandbox 运行环境规则</td>
+            <td>平台维护默认基础镜像，Sandbox 基于该镜像创建；测试或构建时再按项目配置补齐依赖环境，必要时进入 Docker 或容器模式；任务结束后自动销毁。</td>
+            <td>保持基础环境一致、减少脏状态积累，并提升测试与构建的可重复性。</td>
+          </tr>
+          <tr>
+            <td>Git 嵌入规则</td>
+            <td>Git 嵌入在 Project Workspace 层，作为项目真源的底层版本控制引擎。</td>
+            <td>让产品层的项目语义与工程层的版本语义保持清晰映射。</td>
+          </tr>
+          <tr>
+            <td>Proposal Branch 规则</td>
+            <td>每个 Proposal 对应一个独立分支，Agent 在自己的 Sandbox 中围绕该分支工作。</td>
+            <td>避免直接污染主分支，并支持多 Agent 并行协作。</td>
+          </tr>
+          <tr>
+            <td>Confirm / Push / Deploy 分离规则</td>
+            <td>Confirm 表示 merge，push 表示项目主线同步到远端，deploy 表示把稳定版本发布到运行环境。</td>
+            <td>避免把代码确认、远端同步和部署发布混成一个动作。</td>
+          </tr>
+          <tr>
+            <td>版本沉淀规则</td>
+            <td>每次 Proposal 被应用后，都应生成版本记录。</td>
+            <td>支持历史回看、版本对比、审计和必要时回滚。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>七、实现建议</h2>
+      <p class="lead">如果这套方案进入产品设计或答辩阶段，可以优先突出下面这些实现要点。</p>
+      <div class="rule-list">
+        <div class="rule">
+          <strong>规则 1：聊天负责沟通，Workspace 负责落地</strong>
+          <p>把会话系统与工程真源清晰分离，是控制复杂度和减少错误的关键。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 2：Proposal 是唯一正规写回通道</strong>
+          <p>所有 Agent 修改结果统一进入 Proposal Pool，再由用户或 Orchestrator 确认落盘。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 3：Sandbox 负责执行，Project 负责持久化</strong>
+          <p>不要让 Agent 直接把试错代码写入真源，避免多人并行时的覆盖与污染。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 3.1：基础镜像与项目依赖环境分层</strong>
+          <p>平台先维护统一的基础 Sandbox Image，保证每个临时环境至少具备一致的 Git 与基础工具；真正与项目相关的依赖，则在运行测试或构建前按配置动态准备，必要时直接切到 Docker 或容器化执行。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 4：切换 Workspace 等于切换协作语境</strong>
+          <p>切换不是简单换目录，而是切换会话的项目边界、上下文和权限，因此应清空当前执行态。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 5：Git 只落在项目层，不落在聊天层</strong>
+          <p>聊天系统只负责沟通和协作入口，Git Repository 应绑定在 Project Workspace 层，避免模型语义和版本语义混乱。</p>
+        </div>
+        <div class="rule">
+          <strong>规则 6：Confirm 不是 Push，Push 不是 Deploy</strong>
+          <p>Confirm 是代码进入项目真源，Push 是稳定版本同步远端，Deploy 是把选定版本发布到预览、测试或生产环境。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>八、Git 接入设计</h2>
+      <p class="lead">采用方案 A，即每个 Proposal 对应一个独立分支。Git 不取代 Workspace，而是作为 Project Workspace 的底层版本引擎。</p>
+      <div class="grid-2">
+        <div class="card">
+          <span class="tag primary">Git 嵌入位置</span>
+          <h3>嵌入在 Project Workspace 层</h3>
+          <p>一个 Project Workspace 默认绑定一个 Git Repository。Workspace 管协作空间和权限，Project Workspace 管具体项目与 Git 主线。</p>
+        </div>
+        <div class="card">
+          <span class="tag green">分支策略</span>
+          <h3>每个 Proposal 对应一个分支</h3>
+          <p>Agent 在 Sandbox 中围绕自己的 Proposal Branch 工作。一个 Sandbox 不是一次 commit，而是一个可产生多次 commit 的临时工作副本。</p>
+        </div>
+        <div class="card">
+          <span class="tag orange">Sandbox 环境</span>
+          <h3>基础镜像先行，项目依赖后置</h3>
+          <p>平台在云端维护默认基础镜像，至少包含 git 与基础运行工具。Sandbox 创建时可从缓存恢复，也可重新构建；当需要运行测试、构建或预览时，再根据项目配置准备依赖环境，必要时直接进入 Docker 或容器化执行模式。</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">生命周期</span>
+          <h3>Sandbox 默认短生命周期</h3>
+          <p>Sandbox 主要用于当前任务的编码、测试与预览，不保留为长期运行实例。任务完成后自动销毁，避免环境污染、脏状态积累和多任务串扰。</p>
+        </div>
+      </div>
+      <div class="flow" style="margin-top: 18px;">
+        <div class="flow-box">
+          <strong>Main Branch</strong>
+          <p>项目当前稳定主线，作为 Project Workspace 的真源</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Proposal Branch</strong>
+          <p>从主线切出，每个 Proposal 单独对应一个分支</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Confirm</strong>
+          <p>审阅通过后 merge 回主线，形成新的版本记录</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Push</strong>
+          <p>当多个已确认 Proposal 组成稳定版本后，再统一同步到远端仓库</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>Deploy</strong>
+          <p>基于已 push 或已确认的稳定版本，进入预览、测试或生产发布流程</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        推荐约束：在最终稳定版本确认之前，Proposal Branch 默认不进入正式远端主仓库；如确有需要，可先进入平台内部暂存仓库，但不视为正式发布。同时，Sandbox 只负责临时执行，不承载长期持久化环境；真正长期保留的是 Project Workspace、Proposal 与 Version History。
+      </div>
+    </section>
+
+    <div class="footer">
+      AgentHub Workspace 方案示意页 | 适合用于设计评审、答辩讲解和产品结构对齐
+    </div>
+  </div>
+</body>
+</html>

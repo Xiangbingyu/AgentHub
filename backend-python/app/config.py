@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     app_name: str = "AgentHub Python Service"
     app_env: str = "development"
     app_version: str = "0.1.0"
+    test_api_key: str | None = None
+    test_base_url: str | None = None
+    test_model: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

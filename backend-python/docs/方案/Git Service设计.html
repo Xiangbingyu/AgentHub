@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentHub Git Service 设计方案</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #667085;
+      --line: #dbe3f0;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --orange: #ea580c;
+      --orange-soft: #ffedd5;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --red: #dc2626;
+      --red-soft: #fee2e2;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, #dbeafe 0, transparent 28%),
+        radial-gradient(circle at top left, #ede9fe 0, transparent 24%),
+        var(--bg);
+      line-height: 1.6;
+    }
+
+    .page {
+      width: min(1200px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 36px 0 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #111827 0%, #1d4ed8 52%, #2563eb 100%);
+      color: #fff;
+      border-radius: 28px;
+      padding: 40px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 38px;
+      line-height: 1.15;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 900px;
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 16px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 13px;
+    }
+
+    .section {
+      background: var(--panel);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-top: 24px;
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+    }
+
+    .section p.lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .tag.primary { background: var(--primary-soft); color: var(--primary); }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.orange { background: var(--orange-soft); color: var(--orange); }
+    .tag.purple { background: var(--purple-soft); color: var(--purple); }
+    .tag.red { background: var(--red-soft); color: var(--red); }
+
+    .layer-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .layer {
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--primary);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .layer strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 17px;
+    }
+
+    .layer span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .flow-box {
+      flex: 1 1 170px;
+      min-width: 170px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      padding: 16px;
+      background: #fff;
+      text-align: center;
+    }
+
+    .flow-box strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .flow-box p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .arrow {
+      color: var(--primary);
+      font-size: 28px;
+      font-weight: 700;
+      padding: 0 4px;
+    }
+
+    .mini-note {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .rule-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .rule {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .rule strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .rule p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+    }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2,
+      .grid-3,
+      .rule-list {
+        grid-template-columns: 1fr;
+      }
+
+      .page {
+        width: min(100vw - 24px, 1200px);
+      }
+
+      .hero {
+        padding: 28px 22px;
+      }
+
+      .hero h1 {
+        font-size: 30px;
+      }
+
+      .flow {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .arrow {
+        align-self: center;
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>AgentHub Git Service 设计</h1>
+      <p>
+        这页先把 Git Service 本身拥有哪些内部服务能力讲清楚，再说明其中哪些能力会被封装成对外开放的业务接口，
+        最后沿着一条主流程从头讲到尾，用每一步实际会发生什么把这套分层关系串起来。
+      </p>
+      <div class="pill-row">
+        <span class="pill">先看能力边界</span>
+        <span class="pill">再看流程</span>
+        <span class="pill">开放接口是业务封装</span>
+        <span class="pill">Proposal Branch 驱动</span>
+        <span class="pill">Branch Lock 独占维护</span>
+        <span class="pill">Confirm / Push / Deploy 分离</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>一、先看接口边界</h2>
+      <p class="lead">
+        这里先区分两层：一层是 Git Service 自身提供的内部服务能力，供后端不同模块按需复用；另一层是从这些能力里挑出关键且稳定的一部分，再封装成前端或 Orchestrator 可直接调用的业务接口。先把这两层理顺，后面再顺着主流程往下讲。
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <span class="tag green">开放接口</span>
+          <h3>从内部能力里封装出的业务 API</h3>
+          <p>
+            <code>POST /projects/{id}/repo/init</code><br />
+            <code>POST /projects/{id}/proposals</code><br />
+            <code>GET /projects/{id}/proposals</code><br />
+            <code>GET /proposals/{id}/diff</code><br />
+            <code>POST /proposals/{id}/commit</code><br />
+            <code>POST /proposals/{id}/confirm</code><br />
+            <code>POST /projects/{id}/push</code><br />
+            <code>GET /projects/{id}/history</code>
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag red">内部接口</span>
+          <h3>Git Service 自身提供的内部服务</h3>
+          <p>
+            <code>initRepository(...)</code><br />
+            <code>createProposalBranch(...)</code><br />
+            <code>listProposals(...)</code><br />
+            <code>getProposalDiff(...)</code><br />
+            <code>getProjectHistory(...)</code><br />
+            <code>bindSandbox(...)</code><br />
+            <code>createBranchLock(...)</code><br />
+            <code>checkBranchLock(...)</code><br />
+            <code>getSandboxBinding(...)</code><br />
+            <code>getWorkingCopyStatus(...)</code><br />
+            <code>confirmProposal(...)</code><br />
+            <code>pushProject(...)</code>
+          </p>
+        </div>
+      </div>
+      <div class="mini-note">
+        也就是说，开放接口和内部接口不是两套彼此独立的能力。更准确地说，Git Service 本体先提供一组可复用的内部服务，
+        再由业务层把其中部分关键能力按产品语义封装成“创建 Proposal”“提交改动”“确认合并”“查看历史”这类对外动作。
+        这里列出的内部接口是核心子集，不是完整清单；尤其在读取场景下，一个开放接口往往会组合多个内部查询能力来完成。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>二、开放接口</h2>
+      <p class="lead">
+        这一组接口是业务层真正会直接看到和使用的接口。它们不是 Git Service 的全部能力清单，而是从内部服务里挑出的关键动作，
+        再补上鉴权、参数校验、幂等控制、审计记录等业务封装后形成的对外 API。
+      </p>
+      <div class="rule-list">
+        <div class="rule">
+          <strong><code>POST /projects/{id}/repo/init</code></strong>
+          <p>用于初始化项目仓库。通常发生在项目第一次接入 Git 时，对外暴露的是这个业务接口，内部通常会在校验通过后调用 <code>initRepository(...)</code> 来创建 Repository、准备默认主线 <code>main</code> 并写入元数据。</p>
+        </div>
+        <div class="rule">
+          <strong><code>POST /projects/{id}/proposals</code></strong>
+          <p>用于创建一条新的 Proposal。除了生成提案记录，还会在内部编排里调用 <code>createProposalBranch(...)</code> 切出 Proposal Branch，并按需要补上 Sandbox 绑定和锁信息初始化。</p>
+        </div>
+        <div class="rule">
+          <strong><code>GET /projects/{id}/proposals</code></strong>
+          <p>用于查看当前项目下的 Proposal Pool，也就是当前项目里所有待审、待合并、已合并的提案列表。它对外表现为一个列表接口，但内部通常会以 <code>listProposals(...)</code> 为主入口，再组合提案状态、分支摘要、最近提交等查询能力拼装出业务层需要的列表视图。</p>
+        </div>
+        <div class="rule">
+          <strong><code>GET /proposals/{id}/diff</code></strong>
+          <p>用于查看某个 Proposal 的具体变更内容，通常包括 changed files、diff 摘要以及对应的提交信息。它对外是评审视图，内部通常会以 <code>getProposalDiff(...)</code> 为主入口，再组合 changed files、commit range、diff patch 等仓库查询能力生成结果。</p>
+        </div>
+        <div class="rule">
+          <strong><code>POST /proposals/{id}/commit</code></strong>
+          <p>用于提交当前 Proposal Branch 上的一轮修改。它代表“把当前 Sandbox 里的改动正式记到这个 Proposal 里”；在内部通常会串起 <code>getSandboxBinding(...)</code>、<code>getWorkingCopyStatus(...)</code>、<code>checkBranchLock(...)</code> 等服务再完成提交。</p>
+        </div>
+        <div class="rule">
+          <strong><code>POST /proposals/{id}/confirm</code></strong>
+          <p>用于确认某个 Proposal，并把它合并进项目主线。对外看到的是 Confirm 这个业务动作，内部核心通常由 <code>confirmProposal(...)</code> 完成；这个动作对应的不是 Push，也不是 Deploy。</p>
+        </div>
+        <div class="rule">
+          <strong><code>POST /projects/{id}/push</code></strong>
+          <p>用于把当前项目的稳定主线同步到远端仓库。通常发生在若干 Proposal 已经 Confirm 后的阶段性稳定版本时，对外暴露为业务动作，内部则由 <code>pushProject(...)</code> 等能力完成真正的主线同步。</p>
+        </div>
+        <div class="rule">
+          <strong><code>GET /projects/{id}/history</code></strong>
+          <p>用于查看项目的 Version History，帮助用户回看历史版本、审计变更来源，并为后续回滚提供依据。内部通常会以 <code>getProjectHistory(...)</code> 为主入口，再组合版本记录、关联 Proposal、提交摘要等查询能力形成可展示历史。</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        这一组接口全都属于“业务语义接口”。因此前端不需要理解底层的 Git add、checkout、merge，也不需要知道内部具体调用了哪些服务；
+        它只需要理解 Proposal、Confirm、Push 这些产品动作即可。反过来说，没有被封装出来的内部服务，并不代表它们不重要，只是它们暂时不直接对外开放。
+        同时也不要求每个开放接口都和单一内部接口一一对应，尤其列表、Diff、History 这类读接口，通常本来就是内部组合查询的结果。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>三、内部接口</h2>
+      <p class="lead">
+        下面这些接口不是给前端直接调用的，而是 Git Service 自身提供的内部服务能力。它们既可以被对外开放的业务接口编排调用，
+        也可以被其他后端模块、后台任务、恢复流程或运维流程按权限直接复用。这里列的是核心子集，用来表达能力边界和主调用关系，
+        并不是要把 Git Service 的全部内部方法逐个铺开。
+      </p>
+      <div class="rule-list">
+        <div class="rule">
+          <strong><code>initRepository(projectId, localPath, remoteUrl?)</code></strong>
+          <p>内部初始化仓库的方法，用于创建本地仓库、准备默认分支和写入 Repository 元数据。它可以被 <code>POST /projects/{id}/repo/init</code> 这类开放接口调用，也可以被项目导入、仓库修复、环境恢复等内部流程复用。</p>
+        </div>
+        <div class="rule">
+          <strong><code>createProposalBranch(projectId, proposalId, baseBranch)</code></strong>
+          <p>内部创建 Proposal Branch 的方法，用于从主线或指定基线切出工作分支。它通常会被创建 Proposal 的开放接口调用，但本身首先是一项可复用的内部能力。</p>
+        </div>
+        <div class="rule">
+          <strong><code>listProposals(projectId, filters)</code></strong>
+          <p>内部读取 Proposal 列表的主查询能力，用于按项目、状态、时间等条件返回 Proposal Pool 的基础数据。对外的 <code>GET /projects/{id}/proposals</code> 往往会以它为入口，再组合其他摘要信息进行列表拼装。</p>
+        </div>
+        <div class="rule">
+          <strong><code>getProposalDiff(proposalId, options)</code></strong>
+          <p>内部读取 Proposal 变更详情的主查询能力，用于获取某个 Proposal 对应的 diff、changed files、提交区间等信息。对外的 <code>GET /proposals/{id}/diff</code> 一般会围绕它再补齐评审视图需要的数据。</p>
+        </div>
+        <div class="rule">
+          <strong><code>getProjectHistory(projectId, pagination)</code></strong>
+          <p>内部读取项目版本历史的主查询能力，用于按时间或分页返回版本记录、关联提案、提交摘要等数据。对外的 <code>GET /projects/{id}/history</code> 通常会基于它再整理出审计和回看所需的展示结构。</p>
+        </div>
+        <div class="rule">
+          <strong><code>bindSandbox(sandboxId, projectId, repoId, branchName, workingDir)</code></strong>
+          <p>内部绑定 Sandbox 的方法，用于记录某个 Sandbox 当前对应的仓库、分支和工作目录。它可以服务于创建 Proposal 后的初始化，也可以服务于会话恢复、Agent 迁移或故障恢复场景。</p>
+        </div>
+        <div class="rule">
+          <strong><code>createBranchLock(...)</code></strong>
+          <p>内部创建 Branch Lock 的方法，用于保证一个 Proposal Branch 同一时刻只能由一个 Agent 修改。它属于系统级约束能力，不一定需要单独对外暴露，但可以被多个内部流程共享调用。</p>
+        </div>
+        <div class="rule">
+          <strong><code>checkBranchLock(branchName, agentId, sandboxId)</code></strong>
+          <p>内部校验当前 Agent 和 Sandbox 是否持有目标分支写权限的接口，commit 前必须先经过这一层检查。除了提交流程，其他可能修改分支状态的内部流程也可以复用这层校验。</p>
+        </div>
+        <div class="rule">
+          <strong><code>getSandboxBinding(sandboxId)</code></strong>
+          <p>内部查询 Sandbox 绑定关系的接口，用于定位具体该在哪个工作目录执行 Git 操作。它更像基础查询能力，通常不会直接对前端开放，但会被多个写操作或诊断流程依赖。</p>
+        </div>
+        <div class="rule">
+          <strong><code>getWorkingCopyStatus(sandboxId)</code></strong>
+          <p>内部读取工作副本状态的接口，用于检查当前 Sandbox 中有哪些未提交改动。它既可服务于 commit 前检查，也可服务于自动诊断、脏工作区预警等内部场景。</p>
+        </div>
+        <div class="rule">
+          <strong><code>confirmProposal(proposalId, strategy)</code></strong>
+          <p>内部执行 Confirm 的核心能力，负责完成主线合并和版本记录写入。对外的 <code>POST /proposals/{id}/confirm</code> 通常只是把这个内部能力包装成了更稳定的业务动作。</p>
+        </div>
+        <div class="rule">
+          <strong><code>pushProject(projectId, branch)</code></strong>
+          <p>内部执行主线 push 的能力，用于把稳定版本同步到远端仓库。它可以被 <code>POST /projects/{id}/push</code> 调用，也可以被内部发布流水线或批量同步任务复用。</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        简单理解：Git Service 本体就是这组内部服务。开放接口只是其中一部分能力在业务层的“对外包装”，
+        所以两者不是一一对照的重复罗列，而是“能力层”和“业务封装层”的关系。写接口常常会调用少数几个核心写能力，
+        读接口则更常见地表现为“一个对外接口对应一组内部查询能力的组合”。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>四、主流程</h2>
+      <p class="lead">
+        下面按一条完整主流程来讲。你可以把它理解成：从“项目第一次接入 Git”开始，到“代码进入主线并推送远端”为止，
+        业务层会调用哪些开放接口，而这些开放接口在 Git Service 内部又会进一步编排哪些服务能力。这里先讲主写流程，
+        查询流程放到下一节单独补充。
+      </p>
+      <div class="grid-3">
+        <div class="card">
+          <span class="tag primary">第 1 步</span>
+          <h3>项目初始化仓库</h3>
+          <p>当某个 Project Workspace 创建完成后，业务层先调用 <code>POST /projects/{id}/repo/init</code>。这个开放接口在内部通常会封装调用 <code>initRepository(...)</code>，完成 Repository 创建、默认分支 <code>main</code> 初始化以及项目与仓库的绑定。</p>
+        </div>
+        <div class="card">
+          <span class="tag green">第 2 步</span>
+          <h3>创建 Proposal 和分支</h3>
+          <p>当用户准备开始一轮新改动时，系统调用 <code>POST /projects/{id}/proposals</code>。这一步不只是建一条提案记录，还会在内部调用 <code>createProposalBranch(...)</code> 从 <code>main</code> 切出 Proposal Branch，后续所有改动都发生在这个分支上。</p>
+        </div>
+        <div class="card">
+          <span class="tag orange">第 3 步</span>
+          <h3>给分支加独占写锁</h3>
+          <p>Proposal Branch 建好以后，Git Service 会继续调用 <code>createBranchLock(...)</code> 创建 Branch Lock。它的含义非常直接：这个分支同一时刻只能由一个 Agent 修改。未持有锁的 Agent 可以看 Proposal 信息，但不能往这个分支提交代码。</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">第 4 步</span>
+          <h3>把 Sandbox 绑定到分支</h3>
+          <p>当前负责的 Agent 会在自己的 Sandbox 里打开这个 Proposal Branch 对应的工作副本。Git Service 需要通过 <code>bindSandbox(...)</code> 记录清楚：这个 Sandbox 现在绑定的是哪个项目、哪个仓库、哪个分支、哪个工作目录。</p>
+        </div>
+        <div class="card">
+          <span class="tag primary">第 5 步</span>
+          <h3>Agent 修改并提交</h3>
+          <p>Agent 在 Sandbox 里写代码、改文档、调配置，完成一轮修改后调用 <code>POST /proposals/{id}/commit</code>。这时开放接口会在内部编排 <code>getSandboxBinding(...)</code>、<code>getWorkingCopyStatus(...)</code>、<code>checkBranchLock(...)</code> 等服务，确认当前 Agent 确实有权往这个 Proposal Branch 提交。</p>
+        </div>
+        <div class="card">
+          <span class="tag green">第 6 步</span>
+          <h3>Proposal Pool 展示可审内容</h3>
+          <p>提交以后，系统会把这次 Proposal 的 diff、changed files、commit 信息整理出来。前端通过 <code>GET /projects/{id}/proposals</code> 看 Proposal Pool，通过 <code>GET /proposals/{id}/diff</code> 查看单个 Proposal 的具体差异；在内部，这两类读取通常分别以 <code>listProposals(...)</code> 和 <code>getProposalDiff(...)</code> 为主入口，再补齐评审视图所需的数据。</p>
+        </div>
+        <div class="card">
+          <span class="tag red">第 7 步</span>
+          <h3>审核后执行 Confirm</h3>
+          <p>如果用户或 Orchestrator 认为 Proposal 没问题，就调用 <code>POST /proposals/{id}/confirm</code>。这个开放接口在内部会调用 <code>confirmProposal(...)</code>，把 Proposal Branch merge 到主线，并生成一条 Version History 记录。</p>
+        </div>
+        <div class="card">
+          <span class="tag orange">第 8 步</span>
+          <h3>形成历史版本</h3>
+          <p>Proposal 一旦 Confirm 成功，系统就会把本次合并沉淀成版本记录。之后可以通过 <code>GET /projects/{id}/history</code> 回看项目历史、确认某次变更来自哪个 Proposal；对内则通常由 <code>getProjectHistory(...)</code> 负责拉取历史主数据并组织展示结构。</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">第 9 步</span>
+          <h3>在稳定阶段手动 Push</h3>
+          <p>Confirm 完成并不代表立刻推远端。只有当项目主线达到一个稳定状态后，才通过 <code>POST /projects/{id}/push</code> 触发同步；而真正把当前主线同步到远端仓库的，仍然是内部的 <code>pushProject(...)</code> 这类能力。</p>
+        </div>
+        <div class="card">
+          <span class="tag red">第 10 步</span>
+          <h3>Push 之后才考虑部署</h3>
+          <p>Git Service 到这里的职责基本结束。后续是否进入预览、测试或正式部署，是 Deploy 阶段的事，不和 Confirm、Push 混在一起。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>五、查询流程</h2>
+      <p class="lead">
+        除了写入主流程，Proposal Pool、Diff、History 这三类读接口也需要单独讲清楚。它们同样是开放接口触发内部编排，
+        只是内部更偏向组合查询，而不是执行写操作。
+      </p>
+      <div class="grid-3">
+        <div class="card">
+          <span class="tag green">读流程 A</span>
+          <h3>读取 Proposal Pool</h3>
+          <p>当前端调用 <code>GET /projects/{id}/proposals</code> 时，业务层会先做鉴权和过滤条件整理，再进入 Git Service 的查询编排。内部通常先调用 <code>listProposals(...)</code> 取得 Proposal 基础列表，再按需要补齐分支摘要、最近提交、状态统计等信息，最后返回前端真正需要的 Proposal Pool 视图。</p>
+        </div>
+        <div class="card">
+          <span class="tag orange">读流程 B</span>
+          <h3>读取 Proposal Diff</h3>
+          <p>当前端调用 <code>GET /proposals/{id}/diff</code> 时，业务层会进入 Proposal 详情查询流程。Git Service 内部通常以 <code>getProposalDiff(...)</code> 为主入口，再组合 changed files、commit range、patch 内容等仓库查询能力，形成评审页真正需要的 diff 结果。</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">读流程 C</span>
+          <h3>读取 Project History</h3>
+          <p>当前端调用 <code>GET /projects/{id}/history</code> 时，业务层会把分页、筛选、审计视角等需求带入 Git Service。内部通常先调用 <code>getProjectHistory(...)</code> 拉取历史记录主数据，再补齐关联 Proposal、版本摘要、提交来源等信息，最终生成面向产品的 Version History 视图。</p>
+        </div>
+      </div>
+      <div class="mini-note">
+        因此，主流程里并不是“只用了开放接口没有调用内部接口”，而是为了讲清主路径，之前只把写入链路展开了。补上查询流程以后，可以更完整地看到：开放接口始终只是入口，真正落地仍然依赖 Git Service 的内部服务编排。
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>六、把设计细节放回流程里看</h2>
+      <p class="lead">
+        如果只按主流程看，下面这些规则就是你当前这套设计里最重要的细节点。
+      </p>
+      <div class="rule-list">
+        <div class="rule">
+          <strong>细节 1：Git 只挂在 Project Workspace 上</strong>
+          <p>仓库不是挂在聊天上，也不是挂在 Workspace 总层上，而是挂在具体的 Project Workspace 上。这样每个项目才有自己的真源和主线。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 2：每个 Proposal 对应一个 Branch</strong>
+          <p>Proposal Pool 里的一项 Proposal，本质上对应一个 Proposal Branch。Proposal Pool 是列表，Proposal 才是单项变更提案。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 3：Sandbox 不是一次 Commit</strong>
+          <p>Sandbox 是工作副本，一个 Agent 可以在一个 Sandbox 里做多次修改、多次 commit，最终都归到当前 Proposal Branch 上。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 4：Branch Lock 不是装饰，是硬约束</strong>
+          <p>未持有 Branch Lock 的 Agent 不允许向该分支提交改动。这意味着系统层面直接杜绝“多个 Agent 同时维护同一 Proposal Branch”。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 5：Commit、Confirm、Push 不是一回事</strong>
+          <p>Commit 只是把当前工作副本里的改动提交到 Proposal Branch；Confirm 是把 Proposal Branch merge 到主线；Push 是把稳定主线同步到远端。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 6：接口只开放业务动作</strong>
+          <p>前端不会直接调用 <code>git checkout</code> 或 <code>git merge</code>，而是调用“创建 Proposal”“查看 Diff”“Confirm 合并”“Push 项目”这类业务接口。开放接口描述的是产品动作，不是底层命令集合。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 7：开放接口只是内部能力的子集封装</strong>
+          <p>Git Service 本身先提供 <code>initRepository(...)</code>、<code>createBranchLock(...)</code>、<code>getWorkingCopyStatus(...)</code> 这类内部服务。只有其中一部分关键且稳定的能力，会被进一步封装成对外 API；剩下的内部服务仍可供其他后端流程直接复用。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 8：内部接口清单是核心子集，不是完整枚举</strong>
+          <p>文档里列出内部接口的目的，是帮助读者理解 Git Service 的主要能力域和调用关系，而不是穷举每一个 helper、查询函数或底层仓库操作。因此清单应该覆盖关键入口，但不必假装“内部只有这几个方法”。</p>
+        </div>
+        <div class="rule">
+          <strong>细节 9：读接口通常比写接口更像组合查询</strong>
+          <p><code>GET /projects/{id}/proposals</code>、<code>GET /proposals/{id}/diff</code>、<code>GET /projects/{id}/history</code> 这类接口，对外看是单一 API，对内往往会组合多个查询能力和展示拼装步骤。因此它们有对应的主查询入口，但不必强行理解成单一内部方法的机械映射。</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      AgentHub Git Service 方案示意页 | 这版聚焦内部能力、开放接口与主流程之间的关系
+    </div>
+  </div>
+</body>
+</html>
