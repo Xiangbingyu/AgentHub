@@ -64,7 +64,12 @@ def _build_runtime_bundle(toolset: dict[str, object]) -> RuntimeBundle:
             agent_name="Orchestrator",
             agent_kind="orchestrator",
         ),
+        workspace_root="E:/workspace",
+        role="orchestrator",
         prompt_profile="orchestrator",
+        prompt_plan={"system_profile": "orchestrator"},
+        tool_plan={"model_tools_enabled": True, "runtime_tools_enabled": True},
+        executor_policy={"kind": "internal_llm"},
         tool_registry=registry,
     )
 

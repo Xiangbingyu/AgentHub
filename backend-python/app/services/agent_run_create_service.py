@@ -7,6 +7,7 @@ from app.models.plan import PlanModel
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
+from app.runtime.runtime_assembler import build_runtime_snapshot
 from app.schemas.agent_run_create import AgentRunCreateRequest, AgentRunCreateResponse
 
 
@@ -30,11 +31,13 @@ class AgentRunCreateService:
         agent_run = AgentRunModel(
             run_id=run_id,
             agent_id=payload.agent_id,
+            role=agent.role,
             agent_kind=agent.agent_kind,
             workspace_id=payload.workspace_id,
             root_run_id=run_id,
             status="created",
             context_snapshot=payload.metadata,
+            runtime_snapshot=build_runtime_snapshot(agent),
         )
         self.agent_run_repository.create(agent_run)
         self.plan_repository.create(

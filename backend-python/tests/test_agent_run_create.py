@@ -1,4 +1,5 @@
 from uuid import uuid4
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -24,3 +25,5 @@ def test_create_agent_run() -> None:
     body = response.json()
     assert body["status"] == "created"
     assert "run_id" in body
+    created_run = STORE.agent_runs[UUID(body["run_id"])]
+    assert created_run.runtime_snapshot["role"] == "orchestrator"

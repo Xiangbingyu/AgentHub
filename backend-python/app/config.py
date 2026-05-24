@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     test_api_key: str | None = None
     test_base_url: str | None = None
     test_model: str | None = None
+    test_workspace_path: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

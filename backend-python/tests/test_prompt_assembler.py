@@ -22,7 +22,12 @@ def test_prompt_assembler_builds_bundle() -> None:
             agent_name="Orchestrator",
             agent_kind="orchestrator",
         ),
+        workspace_root="E:/workspace",
+        role="orchestrator",
         prompt_profile="orchestrator",
+        prompt_plan={"system_profile": "orchestrator"},
+        tool_plan={"model_tools_enabled": True, "runtime_tools_enabled": True},
+        executor_policy={"kind": "internal_llm"},
         tool_registry=ToolRegistry(),
     )
     input_event = InputEventModel(
@@ -35,5 +40,10 @@ def test_prompt_assembler_builds_bundle() -> None:
 
     bundle = assembler.assemble(runtime, input_event)
 
+    assert "[PROVIDER]" in bundle.system_prompt
     assert "role=orchestrator" in bundle.system_prompt
+    assert "model_visible_tools=(none)" in bundle.system_prompt
+    assert "workspace_root=E:/workspace" in bundle.system_prompt
+    assert "[RUNTIME_CONTEXT]" in bundle.context_prompt
+    assert "workspace_root=E:/workspace" in bundle.context_prompt
     assert "input_type=user_input" in bundle.context_prompt
