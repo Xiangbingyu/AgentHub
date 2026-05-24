@@ -138,7 +138,7 @@ def test_runtime_assembler_can_build_runtime_from_run_id() -> None:
     assert runtime.runtime_snapshot["workspace_root"].endswith("backend-python")
 
 
-def test_framework_worker_runtime_defaults_claude_command_and_allowed_tools() -> None:
+def test_framework_worker_runtime_defaults_claude_command_without_framework_specific_options() -> None:
     assembler = _assembler()
     agent_id = uuid4()
     run_id = uuid4()
@@ -161,4 +161,38 @@ def test_framework_worker_runtime_defaults_claude_command_and_allowed_tools() ->
 
     assert runtime.uses_internal_executor() is False
     assert runtime.executor_policy["command"] == "claude"
-    assert runtime.executor_policy["framework_allowed_tools"] == ["Read", "Edit", "Bash", "Write"]
+    assert runtime.executor_policy["framework_options"] == {
+        "allow_dangerously_skip_permissions": False,
+        "dangerously_skip_permissions": False,
+    }
+
+
+def test_framework_worker_runtime_migrates_legacy_executor_fields_into_framework_options() -> None:
+    assembler = _assembler()
+    agent_id = uuid4()
+    run_id = uuid4()
+
+    runtime = assembler.assemble(
+        AgentRunModel(
+            run_id=run_id,
+            agent_id=agent_id,
+            agent_kind="worker",
+            workspace_id=uuid4(),
+            root_run_id=run_id,
+        ),
+        AgentModel(
+            agent_id=agent_id,
+            agent_name="Claude Worker",
+            agent_kind="worker",
+            executor_policy={
+                "kind": "framework_cli",
+                "framework": "claude",
+                "framework_allowed_tools": ["Read", "Edit"],
+                "permission_mode": "bypassPermissions",
+            },
+        ),
+    )
+
+    assert runtime.executor_policy["framework_options"]["allowed_tools"] == ["Read", "Edit"]
+    assert runtime.executor_policy["framework_options"]["permission_mode"] == "bypassPermissions"
+    assert "framework_allowed_tools" not in runtime.executor_policy
