@@ -4,7 +4,6 @@ from fastapi import APIRouter
 
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
-from app.repositories.plan_repository import PlanRepository
 from app.schemas.agent_run_create import AgentRunCreateRequest
 from app.services.agent_run_create_service import AgentRunCreateService
 
@@ -16,7 +15,6 @@ def get_service() -> AgentRunCreateService:
     return AgentRunCreateService(
         agent_repository=AgentRepository(),
         agent_run_repository=AgentRunRepository(),
-        plan_repository=PlanRepository(),
     )
 
 

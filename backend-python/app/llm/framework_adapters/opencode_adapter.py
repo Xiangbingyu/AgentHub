@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.llm.llm_types import LlmRequest, LlmResponse
@@ -22,17 +24,22 @@ class OpenCodeAdapter:
         env: dict[str, str],
     ) -> tuple[list[str], dict[str, str]]:
         policy = runtime.executor_policy
+        options = dict(policy.get("framework_options") or {})
         command = policy.get("command") or policy.get("framework") or self.framework_name
         prompt = self.build_prompt(runtime, request)
+        dangerously_skip_permissions = bool(options.get("dangerously_skip_permissions", True))
         resolved_command = self._resolve_command_path(command)
-        return [resolved_command, "-p", prompt, "--output-format", "json"], env
+        command_args = [resolved_command, "run", prompt, "--format", "json"]
+        if dangerously_skip_permissions:
+            command_args.append("--dangerously-skip-permissions")
+        return command_args, env
 
     def parse_response(self, completed: subprocess.CompletedProcess[str]) -> LlmResponse:
         stdout = (completed.stdout or "").strip()
-        payload = self._maybe_parse_json(stdout)
-        if isinstance(payload, dict):
-            content = str(payload.get("content") or payload.get("result") or stdout)
-            return LlmResponse(content=content, raw=payload)
+        events = self._parse_event_stream(stdout)
+        if events:
+            content = self._extract_final_text(events) or stdout
+            return LlmResponse(content=content, raw={"events": events, "stdout": completed.stdout})
 
         return LlmResponse(
             content=stdout,
@@ -45,12 +52,18 @@ class OpenCodeAdapter:
 
     def build_prompt(self, runtime: RuntimeBundle, request: LlmRequest) -> str:
         user_messages = "\n\n".join(message.content for message in request.messages if message.content)
-        return user_messages or f"Work inside the workspace root: {runtime.workspace_root}"
+        sections = []
+        if user_messages:
+            sections.append(f"[USER_MESSAGE]\n{user_messages}")
+        sections.extend(section.strip() for section in (request.system_prompt, request.context_prompt) if section.strip())
+        prompt = "\n\n".join(sections) or f"Work inside the workspace root: {runtime.workspace_root}"
+        return re.sub(r"\s+", " ", prompt).strip()
 
     def _resolve_command_path(self, command: str) -> str:
-        candidates = [command]
         if os.name == "nt":
-            candidates.extend([f"{command}.cmd", f"{command}.exe", f"{command}.ps1"])
+            candidates = [f"{command}.cmd", f"{command}.exe", command, f"{command}.ps1"]
+        else:
+            candidates = [command]
 
         for candidate in candidates:
             resolved = shutil.which(candidate)
@@ -58,11 +71,27 @@ class OpenCodeAdapter:
                 return resolved
         return command
 
-    def _maybe_parse_json(self, value: str) -> dict[str, object] | None:
+    def _parse_event_stream(self, value: str) -> list[dict[str, object]]:
+        events: list[dict[str, object]] = []
         if not value:
-            return None
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return None
-        return parsed if isinstance(parsed, dict) else None
+            return events
+        for line in value.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
+        return events
+
+    def _extract_final_text(self, events: list[dict[str, object]]) -> str:
+        for event in reversed(events):
+            part = event.get("part")
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text
+        return ""

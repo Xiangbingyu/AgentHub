@@ -24,7 +24,7 @@ class LoopEngine:
 
     def _step(self, runtime: RuntimeBundle, input_event: InputEventModel) -> LoopResult:
         if input_event.type == InputEventType.user_input:
-            if runtime.agent_run.status == "created":
+            if runtime.role == "orchestrator" and runtime.agent_run.status == "created":
                 next_status = "chatting"
                 self.agent_run_repository.update_status(runtime.agent_run.run_id, next_status)
                 return LoopResult(action=LoopAction.continue_, next_status=next_status, reason="enter chatting phase")
@@ -34,6 +34,11 @@ class LoopEngine:
             return LoopResult(action=LoopAction.wait, next_status=next_status, reason="awaiting next event")
 
         if input_event.type == InputEventType.worker_callback:
-            return LoopResult(action=LoopAction.wait, next_status=runtime.agent_run.status, reason="worker callback received")
+            next_status = runtime.agent_run.status
+            if runtime.role == "orchestrator" and runtime.agent_run.status == "updating_plan":
+                callback_status = str(input_event.payload.get("status") or "").strip().lower()
+                next_status = "completed" if callback_status == "completed" else "failed"
+                self.agent_run_repository.update_status(runtime.agent_run.run_id, next_status)
+            return LoopResult(action=LoopAction.wait, next_status=next_status, reason="worker callback received")
 
         return LoopResult(action=LoopAction.stop, next_status=runtime.agent_run.status, reason="unsupported input type")

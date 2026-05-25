@@ -8,7 +8,7 @@ from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
 from app.runtime.runtime_assembler import RuntimeAssembler
-from app.runtime.workspace_resolver import WorkspaceResolver
+from app.runtime.workspace.workspace_resolver import WorkspaceResolver
 from app.config import Settings
 
 
@@ -38,20 +38,20 @@ def test_orchestrator_runtime_exposes_tool_registry_contract() -> None:
             agent_kind="orchestrator",
         ),
     )
-
     assert runtime.role == "orchestrator"
-    assert set(runtime.toolset) == {"plan_tool"}
+    assert set(runtime.tool_registry.tools) == {"plan_tool", "delegate_tool"}
+    assert runtime.instruction_view is not None
+    assert runtime.tool_view is not None
     definitions = runtime.tool_registry.get_tool_definitions()
-    assert len(definitions) == 1
-    assert definitions[0]["function"]["name"] == "plan_tool"
-    assert runtime.get_llm_tools() == definitions
-    assert runtime.get_llm_tool_choice() == {
-        "type": "function",
-        "function": {"name": "plan_tool"},
-    }
-    assert runtime.should_dispatch_tool_calls() is True
+    assert len(definitions) == 2
+    assert [item["function"]["name"] for item in definitions] == ["plan_tool", "delegate_tool"]
+    assert runtime.tool_view.model_tools == definitions
+    assert runtime.tool_view.tool_choice == "auto"
+    assert runtime.tool_view.runtime_tools_enabled is True
     assert runtime.executor_policy["kind"] == "internal_llm"
     assert runtime.workspace_root.endswith("backend-python")
+    assert runtime.prompt_policy["system_profile"] == "orchestrator"
+    assert runtime.tool_policy["system_toolset"] == "orchestrator_default"
 
 
 def test_worker_runtime_keeps_internal_tools_out_of_function_schemas() -> None:
@@ -73,14 +73,13 @@ def test_worker_runtime_keeps_internal_tools_out_of_function_schemas() -> None:
             agent_kind="worker",
         ),
     )
+    assert set(runtime.tool_registry.tools) == {"code_tool"}
+    assert runtime.tool_view.model_tools == []
+    assert runtime.tool_view.tool_choice is None
+    assert runtime.tool_view.runtime_tools_enabled is True
 
-    assert set(runtime.toolset) == {"code_tool"}
-    assert runtime.get_llm_tools() == []
-    assert runtime.get_llm_tool_choice() is None
-    assert runtime.should_dispatch_tool_calls() is False
 
-
-def test_created_phase_tool_behavior_is_hidden_behind_runtime_bundle() -> None:
+def test_orchestrator_runtime_no_longer_forces_plan_tool() -> None:
     assembler = _assembler()
     agent_id = uuid4()
     run_id = uuid4()
@@ -100,9 +99,8 @@ def test_created_phase_tool_behavior_is_hidden_behind_runtime_bundle() -> None:
             agent_kind="orchestrator",
         ),
     )
-
-    assert runtime.get_llm_tool_choice() == "auto"
-    assert runtime.should_dispatch_tool_calls() is True
+    assert runtime.tool_view.tool_choice == "auto"
+    assert runtime.tool_view.runtime_tools_enabled is True
 
 
 def test_runtime_assembler_can_build_runtime_from_run_id() -> None:
@@ -133,9 +131,12 @@ def test_runtime_assembler_can_build_runtime_from_run_id() -> None:
 
     assert runtime.agent_run.run_id == run_id
     assert runtime.agent.agent_id == agent.agent_id
-    assert runtime.prompt_profile == "orchestrator"
     assert runtime.runtime_snapshot["role"] == "orchestrator"
     assert runtime.runtime_snapshot["workspace_root"].endswith("backend-python")
+    assert runtime.prompt_policy["system_profile"] == "orchestrator"
+    assert runtime.tool_policy["system_toolset"] == "orchestrator_default"
+    assert runtime.instruction_view is not None
+    assert runtime.tool_view is not None
 
 
 def test_framework_worker_runtime_defaults_claude_command_without_framework_specific_options() -> None:
@@ -161,6 +162,7 @@ def test_framework_worker_runtime_defaults_claude_command_without_framework_spec
 
     assert runtime.uses_internal_executor() is False
     assert runtime.executor_policy["command"] == "claude"
+    assert runtime.tool_policy["system_toolset"] == "none"
     assert runtime.executor_policy["framework_options"] == {
         "allow_dangerously_skip_permissions": False,
         "dangerously_skip_permissions": False,

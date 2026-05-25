@@ -3,7 +3,7 @@ from uuid import uuid4
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
 from app.runtime.runtime_assembler import RuntimeBundle
-from app.runtime.tool_registry import ToolRegistry, ToolSpec, default_invoke
+from app.runtime.tools.tool_registry import ToolRegistry, ToolSpec, default_invoke
 from app.schemas.plan_tool import PlanToolRequest
 
 
@@ -66,9 +66,13 @@ def _build_runtime_bundle(toolset: dict[str, object]) -> RuntimeBundle:
         ),
         workspace_root="E:/workspace",
         role="orchestrator",
-        prompt_profile="orchestrator",
-        prompt_plan={"system_profile": "orchestrator"},
-        tool_plan={"model_tools_enabled": True, "runtime_tools_enabled": True},
+        prompt_policy={"system_profile": "orchestrator"},
+        tool_policy={
+            "system_toolset": "orchestrator_default",
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
+        },
         executor_policy={"kind": "internal_llm"},
         tool_registry=registry,
     )

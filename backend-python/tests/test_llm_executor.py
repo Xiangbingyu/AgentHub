@@ -16,7 +16,7 @@ from app.llm.llm_types import LlmMessage, LlmRequest
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
 from app.runtime.runtime_assembler import RuntimeBundle
-from app.runtime.tool_registry import ToolRegistry
+from app.runtime.tools.tool_registry import ToolRegistry
 
 
 def test_llm_executor_can_call_model() -> None:
@@ -52,9 +52,8 @@ def test_executor_factory_selects_framework_executor() -> None:
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={"kind": "framework_cli", "framework": "claude"},
         tool_registry=ToolRegistry(),
     )
@@ -85,9 +84,8 @@ def test_framework_executor_parses_json_output(monkeypatch) -> None:
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -115,6 +113,43 @@ def test_framework_executor_parses_json_output(monkeypatch) -> None:
     assert response.raw["content"] == "framework done"
 
 
+def test_claude_adapter_build_prompt_includes_system_and_context() -> None:
+    runtime = RuntimeBundle(
+        agent_run=AgentRunModel(
+            run_id=uuid4(),
+            agent_id=uuid4(),
+            agent_kind="worker",
+            workspace_id=uuid4(),
+        ),
+        agent=AgentModel(
+            agent_id=uuid4(),
+            agent_name="Framework Worker",
+            agent_kind="worker",
+        ),
+        workspace_root="E:/workspace",
+        role="worker",
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
+        executor_policy={"kind": "framework_cli", "framework": "claude"},
+        tool_registry=ToolRegistry(),
+    )
+
+    prompt = ClaudeCodeAdapter().build_prompt(
+        runtime,
+        LlmRequest(
+            system_prompt="[ENVIRONMENT]\nworkspace_root=E:/workspace",
+            context_prompt="[RUNTIME_CONTEXT]\nrun_id=123",
+            messages=[LlmMessage(role="user", content="hello")],
+        ),
+    )
+
+    assert "[ENVIRONMENT]" in prompt
+    assert "workspace_root=E:/workspace" in prompt
+    assert "[RUNTIME_CONTEXT]" in prompt
+    assert "[USER_MESSAGE]" in prompt
+    assert "hello" in prompt
+
+
 def test_claude_adapter_defaults_allowed_tools_when_framework_options_missing(monkeypatch) -> None:
     runtime = RuntimeBundle(
         agent_run=AgentRunModel(
@@ -130,9 +165,8 @@ def test_claude_adapter_defaults_allowed_tools_when_framework_options_missing(mo
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -177,9 +211,8 @@ def test_framework_executor_reuses_local_env_and_timeout(monkeypatch) -> None:
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -230,9 +263,8 @@ def test_framework_executor_passes_permission_flags(monkeypatch) -> None:
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -286,9 +318,8 @@ def test_framework_executor_uses_runtime_workspace_as_default_cwd(monkeypatch) -
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -332,9 +363,8 @@ def test_framework_executor_uses_powershell_wrapper_for_windows_claude(monkeypat
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={
             "kind": "framework_cli",
             "framework": "claude",
@@ -366,7 +396,9 @@ def test_framework_executor_uses_powershell_wrapper_for_windows_claude(monkeypat
     assert captured["args"][2] == "-Command"
     assert "claude -p $env:CLAUDE_PROMPT" in captured["args"][3]
     assert "--allowedTools Read,Edit" in captured["args"][3]
-    assert captured["env"]["CLAUDE_PROMPT"] == "hello"
+    assert "[USER_MESSAGE]\nhello" in captured["env"]["CLAUDE_PROMPT"]
+    assert "system" in captured["env"]["CLAUDE_PROMPT"]
+    assert "context" in captured["env"]["CLAUDE_PROMPT"]
 
 
 def test_framework_executor_delegates_to_adapter(monkeypatch) -> None:
@@ -384,9 +416,8 @@ def test_framework_executor_delegates_to_adapter(monkeypatch) -> None:
         ),
         workspace_root="E:/workspace",
         role="worker",
-        prompt_profile="framework_worker",
-        prompt_plan={"system_profile": "framework_worker"},
-        tool_plan={"model_tools_enabled": False, "runtime_tools_enabled": False},
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
         executor_policy={"kind": "framework_cli", "framework": "claude"},
         tool_registry=ToolRegistry(),
     )
@@ -424,3 +455,119 @@ def test_framework_executor_delegates_to_adapter(monkeypatch) -> None:
     assert response.content == "adapter done"
     assert captured["args"] == ["fake-cli", "--json"]
     assert captured["env"]["FAKE"] == "1"
+
+
+def test_opencode_adapter_builds_run_command_and_parses_event_stream(monkeypatch) -> None:
+    runtime = RuntimeBundle(
+        agent_run=AgentRunModel(
+            run_id=uuid4(),
+            agent_id=uuid4(),
+            agent_kind="worker",
+            workspace_id=uuid4(),
+        ),
+        agent=AgentModel(
+            agent_id=uuid4(),
+            agent_name="OpenCode Worker",
+            agent_kind="worker",
+        ),
+        workspace_root="E:/workspace",
+        role="worker",
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
+        executor_policy={
+            "kind": "framework_cli",
+            "framework": "opencode",
+            "framework_options": {"dangerously_skip_permissions": True},
+        },
+        tool_registry=ToolRegistry(),
+    )
+    captured = {}
+
+    event_stream = "\n".join(
+        [
+            '{"type":"step_start"}',
+            '{"type":"text","part":{"type":"text","text":"intermediate"}}',
+            '{"type":"text","part":{"type":"text","text":"final result"}}',
+        ]
+    )
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args[0]
+        return SimpleNamespace(stdout=event_stream, stderr="", returncode=0)
+
+    monkeypatch.setattr("app.llm.framework_adapters.opencode_adapter.os.name", "posix")
+    monkeypatch.setattr("app.llm.llm_executor.subprocess.run", fake_run)
+
+    response = FrameworkCliExecutor().execute(
+        runtime,
+        LlmRequest(
+            system_prompt="system",
+            context_prompt="context",
+            messages=[LlmMessage(role="user", content="hello opencode")],
+        ),
+    )
+
+    assert captured["args"][1] == "run"
+    assert "--format" in captured["args"]
+    assert captured["args"][4] == "json"
+    assert "--dangerously-skip-permissions" in captured["args"]
+    assert response.content == "final result"
+    assert len(response.raw["events"]) == 3
+    assert "system" in captured["args"][2]
+    assert "context" in captured["args"][2]
+    assert "[USER_MESSAGE] hello opencode" in captured["args"][2]
+
+
+def test_opencode_adapter_prefers_cmd_entrypoint_on_windows(monkeypatch) -> None:
+    runtime = RuntimeBundle(
+        agent_run=AgentRunModel(
+            run_id=uuid4(),
+            agent_id=uuid4(),
+            agent_kind="worker",
+            workspace_id=uuid4(),
+        ),
+        agent=AgentModel(
+            agent_id=uuid4(),
+            agent_name="OpenCode Worker",
+            agent_kind="worker",
+        ),
+        workspace_root="E:/workspace",
+        role="worker",
+        prompt_policy={"system_profile": "framework_worker"},
+        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
+        executor_policy={
+            "kind": "framework_cli",
+            "framework": "opencode",
+            "framework_options": {"dangerously_skip_permissions": True},
+        },
+        tool_registry=ToolRegistry(),
+    )
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args[0]
+        return SimpleNamespace(stdout='{"type":"text","part":{"type":"text","text":"done"}}', stderr="", returncode=0)
+
+    monkeypatch.setattr("app.llm.framework_adapters.opencode_adapter.os.name", "nt")
+    monkeypatch.setattr(
+        "app.llm.framework_adapters.opencode_adapter.shutil.which",
+        lambda candidate: f"C:/tools/{candidate}" if candidate == "opencode.cmd" else None,
+    )
+    monkeypatch.setattr("app.llm.llm_executor.subprocess.run", fake_run)
+
+    FrameworkCliExecutor().execute(
+        runtime,
+        LlmRequest(
+            system_prompt="system",
+            context_prompt="context",
+            messages=[LlmMessage(role="user", content="hello opencode")],
+        ),
+    )
+
+    assert captured["args"][0] == "C:/tools/opencode.cmd"
+    assert captured["args"][1] == "run"
+    assert captured["args"][3:5] == ["--format", "json"]
+    assert "--dangerously-skip-permissions" in captured["args"]
+    assert "system" in captured["args"][2]
+    assert "context" in captured["args"][2]
+    assert "[USER_MESSAGE] hello opencode" in captured["args"][2]

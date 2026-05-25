@@ -45,7 +45,11 @@ class CodexCliAdapter:
 
     def build_prompt(self, runtime: RuntimeBundle, request: LlmRequest) -> str:
         user_messages = "\n\n".join(message.content for message in request.messages if message.content)
-        return user_messages or f"Work inside the workspace root: {runtime.workspace_root}"
+        sections = []
+        if user_messages:
+            sections.append(f"[USER_MESSAGE]\n{user_messages}")
+        sections.extend(section.strip() for section in (request.system_prompt, request.context_prompt) if section.strip())
+        return "\n\n".join(sections) or f"Work inside the workspace root: {runtime.workspace_root}"
 
     def _resolve_command_path(self, command: str) -> str:
         candidates = [command]
