@@ -107,8 +107,6 @@ class FrameworkCliExecutor(AgentExecutor):
 
 class AgentExecutorFactory:
     def resolve(self, runtime: RuntimeBundle) -> AgentExecutor:
-        if runtime.executor_policy.get("kind") == "framework_cli":
-            return FrameworkCliExecutor()
         return InternalLlmExecutor()
 
 
