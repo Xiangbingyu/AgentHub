@@ -67,6 +67,8 @@ def test_prompt_composer_builds_prompt_view() -> None:
     assert "project instructions" in prompt_view.system_prompt
     assert "Always summarize next action." in prompt_view.system_prompt
     assert "orchestrator is responsible for planning and plan maintenance" in prompt_view.system_prompt
+    assert "bash_tool" in prompt_view.system_prompt
+    assert "must call bash_tool" in prompt_view.system_prompt
     assert "[RUNTIME_CONTEXT]" in prompt_view.context_prompt
     assert "workspace_root=E:/workspace" in prompt_view.context_prompt
     assert "input_type=user_input" in prompt_view.context_prompt
@@ -109,4 +111,7 @@ def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
 
     prompt_view = PromptComposer().compose(runtime, input_event)
 
-    assert "model_visible_tools=code_tool" in prompt_view.system_prompt
+    assert "model_visible_tools=code_tool,bash_tool" in prompt_view.system_prompt
+    assert "code_tool" in prompt_view.system_prompt
+    assert "bash_tool" in prompt_view.system_prompt
+    assert "move" in prompt_view.system_prompt or "rename" in prompt_view.system_prompt
