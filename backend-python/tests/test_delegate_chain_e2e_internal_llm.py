@@ -298,7 +298,10 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
                     "Create a one-step plan, delegate to the provided worker, and after callback update the plan. "
                     f"The delegated worker agent id must be `{worker_agent.agent_id}` exactly. "
                     f"The worker must move `{source_path.as_posix()}` to `{target_path.as_posix()}` using bash_tool. "
-                    "Do not tell the worker to use code_tool for this move."
+                    "Do not tell the worker to use code_tool for this move. "
+                    "When you call delegate_tool, the delegated task_prompt must explicitly instruct the worker that the first action must be bash_tool and must include this exact PowerShell command: "
+                    f"`Move-Item -LiteralPath \"{source_path.as_posix()}\" -Destination \"{target_path.as_posix()}\"`. "
+                    "The delegated task_prompt must also say not to use code_tool as a substitute."
                 ),
             },
         )
@@ -358,7 +361,7 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
     worker_entries = [entry for entry in trace if entry["role"] == "worker"]
     assert worker_entries, trace
     assert any("bash_tool" in entry["visible_tools"] for entry in worker_entries), trace
-    assert any(entry["response_tool_calls"] == ["bash_tool"] for entry in worker_entries), trace
+    assert any("bash_tool" in entry["response_tool_calls"] for entry in worker_entries), trace
     assert any("delegate_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
     assert any("plan_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
 

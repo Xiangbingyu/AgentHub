@@ -115,3 +115,4 @@ def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
     assert "code_tool" in prompt_view.system_prompt
     assert "bash_tool" in prompt_view.system_prompt
     assert "move" in prompt_view.system_prompt or "rename" in prompt_view.system_prompt
+    assert "first action" in prompt_view.system_prompt
