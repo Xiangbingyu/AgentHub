@@ -20,9 +20,11 @@ class CodexCliAdapter:
         runtime: RuntimeBundle,
         request: LlmRequest,
         env: dict[str, str],
+        options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
-        policy = runtime.executor_policy
-        command = policy.get("command") or policy.get("framework") or self.framework_name
+        runtime_policy = getattr(runtime, "executor_policy", {}) or {}
+        merged_options = dict(options or {})
+        command = str(merged_options.get("command") or runtime_policy.get("command") or runtime_policy.get("framework") or self.framework_name)
         prompt = self.build_prompt(runtime, request)
         resolved_command = self._resolve_command_path(command)
         return [resolved_command, "-p", prompt, "--output-format", "json"], env

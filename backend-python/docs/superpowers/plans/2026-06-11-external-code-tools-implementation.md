@@ -55,7 +55,6 @@
 - `tests/test_plan_tool.py`
 - `tests/test_tool_call_handler.py`
 - `tests/test_claude_code_tool.py`
-- `tests/test_codex_tool.py`
 - `tests/test_opencode_tool.py`
 - `tests/test_external_code_runner.py`
 
@@ -398,7 +397,6 @@ git commit -m "feat(runtime): resolve tools from explicit tool config"
 - Modify: `app/runtime/tools/tool_resolver.py`
 - Test: `tests/test_external_code_runner.py`
 - Test: `tests/test_claude_code_tool.py`
-- Test: `tests/test_codex_tool.py`
 - Test: `tests/test_opencode_tool.py`
 
 - [ ] **Step 1: Write the failing runner and tool tests**
@@ -548,7 +546,7 @@ class ClaudeCodeTool:
         return {"status": "ok", "framework": "claude", "content": response.content, "raw": response.raw}
 ```
 
-Implement `CodexTool` and `OpenCodeTool` with the same structure, changing only the request type, definition builder, and `framework=` value.
+Implement `CodexTool` and `OpenCodeTool` with the same structure, changing only the request type, definition builder, and `framework=` value. In this phase, only `claude_code_tool` and `opencode_tool` need verification coverage because Codex is not connected in the current environment.
 
 Update the adapters to accept `options`:
 
@@ -564,15 +562,15 @@ Register all three tools by name in `ToolResolver._register_named_tool(...)`.
 Run:
 
 ```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest tests/test_external_code_runner.py tests/test_claude_code_tool.py tests/test_codex_tool.py tests/test_opencode_tool.py -v
+& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest tests/test_external_code_runner.py tests/test_claude_code_tool.py tests/test_opencode_tool.py -v
 ```
 
-Expected: PASS with all three tools using the shared subprocess runner and provider-specific adapters.
+Expected: PASS with `claude_code_tool` and `opencode_tool` using the shared subprocess runner and provider-specific adapters.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/tools/external_code_runner.py app/schemas/claude_code_tool.py app/schemas/codex_tool.py app/schemas/opencode_tool.py app/tools/claude_code_tool.py app/tools/codex_tool.py app/tools/opencode_tool.py app/llm/framework_adapters/claude_code_adapter.py app/llm/framework_adapters/codex_cli_adapter.py app/llm/framework_adapters/opencode_adapter.py app/runtime/tools/tool_resolver.py tests/test_external_code_runner.py tests/test_claude_code_tool.py tests/test_codex_tool.py tests/test_opencode_tool.py
+git add app/tools/external_code_runner.py app/schemas/claude_code_tool.py app/schemas/codex_tool.py app/schemas/opencode_tool.py app/tools/claude_code_tool.py app/tools/codex_tool.py app/tools/opencode_tool.py app/llm/framework_adapters/claude_code_adapter.py app/llm/framework_adapters/codex_cli_adapter.py app/llm/framework_adapters/opencode_adapter.py app/runtime/tools/tool_resolver.py tests/test_external_code_runner.py tests/test_claude_code_tool.py tests/test_opencode_tool.py
 git commit -m "feat(tools): add external code tool runner"
 ```
 

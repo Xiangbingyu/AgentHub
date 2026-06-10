@@ -5,13 +5,19 @@ from typing import TYPE_CHECKING, Any
 
 from app.repositories.plan_repository import PlanRepository
 from app.schemas.bash_tool import BashToolRequest, build_bash_tool_definition
+from app.schemas.claude_code_tool import ClaudeCodeToolRequest, build_claude_code_tool_definition
 from app.schemas.code_tool import CodeToolRequest, build_code_tool_definition
+from app.schemas.codex_tool import CodexToolRequest, build_codex_tool_definition
 from app.schemas.delegate_tool import DelegateToolRequest, build_delegate_tool_definition
+from app.schemas.opencode_tool import OpenCodeToolRequest, build_opencode_tool_definition
 from app.runtime.tools.tool_registry import ToolRegistry, ToolSpec, default_invoke
 from app.schemas.plan_tool import PlanToolRequest, build_plan_tool_definition
 from app.tools.bash_tool import BashTool
+from app.tools.claude_code_tool import ClaudeCodeTool
 from app.tools.code_tool import CodeTool
+from app.tools.codex_tool import CodexTool
 from app.tools.delegate_tool import DelegateTool
+from app.tools.opencode_tool import OpenCodeTool
 from app.tools.plan_tool import PlanTool
 
 if TYPE_CHECKING:
@@ -133,6 +139,42 @@ class ToolResolver:
                     tool=BashTool(),
                     definition=build_bash_tool_definition(),
                     request_model=BashToolRequest,
+                    invoke=default_invoke,
+                )
+            )
+            return
+
+        if tool_name == "claude_code_tool":
+            registry.register(
+                ToolSpec(
+                    name="claude_code_tool",
+                    tool=ClaudeCodeTool(),
+                    definition=build_claude_code_tool_definition(),
+                    request_model=ClaudeCodeToolRequest,
+                    invoke=default_invoke,
+                )
+            )
+            return
+
+        if tool_name == "codex_tool":
+            registry.register(
+                ToolSpec(
+                    name="codex_tool",
+                    tool=CodexTool(),
+                    definition=build_codex_tool_definition(),
+                    request_model=CodexToolRequest,
+                    invoke=default_invoke,
+                )
+            )
+            return
+
+        if tool_name == "opencode_tool":
+            registry.register(
+                ToolSpec(
+                    name="opencode_tool",
+                    tool=OpenCodeTool(),
+                    definition=build_opencode_tool_definition(),
+                    request_model=OpenCodeToolRequest,
                     invoke=default_invoke,
                 )
             )

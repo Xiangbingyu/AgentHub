@@ -25,6 +25,7 @@ class FrameworkAdapter(Protocol):
         runtime: RuntimeBundle,
         request: LlmRequest,
         env: dict[str, str],
+        options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]: ...
 
     def parse_response(self, completed: subprocess.CompletedProcess[str]) -> LlmResponse: ...

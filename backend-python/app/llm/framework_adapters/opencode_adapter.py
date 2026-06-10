@@ -22,12 +22,14 @@ class OpenCodeAdapter:
         runtime: RuntimeBundle,
         request: LlmRequest,
         env: dict[str, str],
+        options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
-        policy = runtime.executor_policy
-        options = dict(policy.get("framework_options") or {})
-        command = policy.get("command") or policy.get("framework") or self.framework_name
+        runtime_policy = getattr(runtime, "executor_policy", {}) or {}
+        merged_options = dict(runtime_policy.get("framework_options") or {})
+        merged_options.update(options or {})
+        command = str(merged_options.get("command") or runtime_policy.get("command") or runtime_policy.get("framework") or self.framework_name)
         prompt = self.build_prompt(runtime, request)
-        dangerously_skip_permissions = bool(options.get("dangerously_skip_permissions", True))
+        dangerously_skip_permissions = bool(merged_options.get("dangerously_skip_permissions", True))
         resolved_command = self._resolve_command_path(command)
         command_args = [resolved_command, "run", prompt, "--format", "json"]
         if dangerously_skip_permissions:

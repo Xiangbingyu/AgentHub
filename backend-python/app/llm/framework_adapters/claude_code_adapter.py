@@ -21,18 +21,23 @@ class ClaudeCodeAdapter:
         runtime: RuntimeBundle,
         request: LlmRequest,
         env: dict[str, str],
+        options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
-        policy = runtime.executor_policy
-        options = dict(policy.get("framework_options") or {})
-        command = policy.get("command") or policy.get("framework") or self.framework_name
+        runtime_policy = getattr(runtime, "executor_policy", {}) or {}
+        merged_options = dict(runtime_policy.get("framework_options") or {})
+        merged_options.update(options or {})
+        command = str(merged_options.get("command") or runtime_policy.get("command") or runtime_policy.get("framework") or self.framework_name)
         prompt = self.build_prompt(runtime, request)
-        allowed_tools = ",".join(options.get("allowed_tools") or ["Read", "Edit", "Bash", "Write"])
-        permission_mode = options.get("permission_mode", policy.get("permission_mode"))
+        allowed_tools = ",".join(merged_options.get("allowed_tools") or ["Read", "Edit", "Bash", "Write"])
+        permission_mode = merged_options.get("permission_mode", runtime_policy.get("permission_mode"))
         allow_dangerously_skip_permissions = bool(
-            options.get("allow_dangerously_skip_permissions", policy.get("allow_dangerously_skip_permissions", False))
+            merged_options.get(
+                "allow_dangerously_skip_permissions",
+                runtime_policy.get("allow_dangerously_skip_permissions", False),
+            )
         )
         dangerously_skip_permissions = bool(
-            options.get("dangerously_skip_permissions", policy.get("dangerously_skip_permissions", False))
+            merged_options.get("dangerously_skip_permissions", runtime_policy.get("dangerously_skip_permissions", False))
         )
 
         if self._should_use_powershell_wrapper(command):
