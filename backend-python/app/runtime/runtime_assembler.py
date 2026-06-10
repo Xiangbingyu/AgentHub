@@ -9,8 +9,8 @@ from app.models.agent_run import AgentRunModel
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
-from app.runtime.executor.executor_policy_resolver import ExecutorPolicyResolver
 from app.runtime.instruction.instruction_resolver import InstructionResolver
+from app.runtime.policy.executor_policy_resolver import ExecutorPolicyResolver
 from app.runtime.policy.prompt_policy_resolver import PromptPolicyResolver
 from app.runtime.policy.tool_policy_resolver import ToolPolicyResolver
 from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolver

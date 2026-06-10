@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
-from app.runtime.executor.executor_policy_resolver import ExecutorPolicyResolver
+from app.runtime.policy.executor_policy_resolver import ExecutorPolicyResolver
 from app.runtime.policy.prompt_policy_resolver import PromptPolicyResolver
 from app.runtime.policy.tool_policy_resolver import ToolPolicyResolver
 from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolver
