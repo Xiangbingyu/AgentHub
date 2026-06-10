@@ -52,3 +52,37 @@ def test_prompt_and_tool_policy_resolvers_apply_framework_worker_defaults() -> N
     assert tool_policy["system_toolset"] == "none"
     assert tool_policy["model_tools_enabled"] is False
     assert tool_policy["runtime_tools_enabled"] is False
+
+
+def test_tool_policy_resolver_includes_default_bash_policy_rules() -> None:
+    tool_policy = ToolPolicyResolver().resolve(
+        {"tool_policy": {}},
+        role="worker",
+        executor_policy={"kind": "internal_llm"},
+    )
+
+    assert tool_policy["command_policies"] == {"bash": {"*": "allow"}}
+
+
+def test_tool_policy_resolver_preserves_runtime_snapshot_command_policies() -> None:
+    tool_policy = ToolPolicyResolver().resolve(
+        {
+            "tool_policy": {
+                "command_policies": {
+                    "bash": {
+                        "*": "deny",
+                        "git status *": "allow",
+                    }
+                }
+            }
+        },
+        role="worker",
+        executor_policy={"kind": "internal_llm"},
+    )
+
+    assert tool_policy["command_policies"] == {
+        "bash": {
+            "*": "deny",
+            "git status *": "allow",
+        }
+    }

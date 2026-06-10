@@ -19,6 +19,11 @@ class ToolPolicyResolver:
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
+            "command_policies": {
+                "bash": {
+                    "*": "allow",
+                }
+            },
         }
         tool_policy.update(runtime_snapshot.get("tool_policy", {}))
         if executor_kind != "internal_llm":
