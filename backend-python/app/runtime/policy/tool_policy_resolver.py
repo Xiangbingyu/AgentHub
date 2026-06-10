@@ -18,7 +18,7 @@ class ToolPolicyResolver:
             "user_tools": [],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
-            "auto_tool_choice": role == "orchestrator",
+            "auto_tool_choice": True,
         }
         tool_policy.update(runtime_snapshot.get("tool_policy", {}))
         if executor_kind != "internal_llm":

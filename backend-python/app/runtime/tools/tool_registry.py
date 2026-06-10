@@ -11,6 +11,7 @@ def default_invoke(tool: object, runtime: Any, arguments: Any) -> object:
     return tool.run(
         run_id=runtime.agent_run.run_id,
         workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
         arguments=arguments,
     )
 

@@ -11,11 +11,12 @@ class RecordingPlanTool:
     def __init__(self) -> None:
         self.calls = []
 
-    def run(self, *, run_id, workspace_id, request: PlanToolRequest):
+    def run(self, *, run_id, workspace_id, runtime, request: PlanToolRequest):
         self.calls.append(
             {
                 "run_id": run_id,
                 "workspace_id": workspace_id,
+                "runtime": runtime,
                 "request": request,
             }
         )
@@ -46,6 +47,7 @@ def _build_runtime_bundle(toolset: dict[str, object]) -> RuntimeBundle:
                 invoke=lambda tool, runtime, request: tool.run(
                     run_id=runtime.agent_run.run_id,
                     workspace_id=runtime.agent_run.workspace_id,
+                    runtime=runtime,
                     request=request,
                 ),
             )
@@ -104,6 +106,7 @@ def test_tool_registry_dispatches_plan_tool_with_nested_json_arguments() -> None
     call = plan_tool.calls[0]
     assert call["run_id"] == runtime_bundle.agent_run.run_id
     assert call["workspace_id"] == runtime_bundle.agent_run.workspace_id
+    assert call["runtime"] is runtime_bundle
     assert call["request"].plan.title == "Execution Plan"
     assert call["request"].plan.steps[0].content == "Write markdown file"
 
@@ -129,6 +132,7 @@ def test_tool_registry_uses_default_dispatch_for_other_tools() -> None:
     call = generic_tool.calls[0]
     assert call["run_id"] == runtime_bundle.agent_run.run_id
     assert call["workspace_id"] == runtime_bundle.agent_run.workspace_id
+    assert call["runtime"] is runtime_bundle
     assert call["arguments"] == {
         "question": "Need clarification",
         "options": ["A", "B"],

@@ -17,6 +17,7 @@ from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolv
 from app.runtime.tools.tool_registry import ToolRegistry
 from app.runtime.tools.tool_resolver import ToolResolver
 from app.runtime.workspace.workspace_resolver import WorkspaceResolver
+from app.runtime.workspace.workspace_session import WorkspaceSession
 
 
 @dataclass(slots=True)
@@ -35,6 +36,7 @@ class RuntimeBundle:
     tool_policy: dict[str, Any]
     executor_policy: dict[str, Any]
     tool_registry: ToolRegistry = field(default_factory=ToolRegistry)
+    workspace_session: WorkspaceSession | None = None
     instruction_view: Any | None = None
     tool_view: Any | None = None
     prompt_view: Any | None = None
@@ -106,6 +108,7 @@ class RuntimeAssembler:
             prompt_policy=prompt_policy,
             tool_policy=tool_policy,
             executor_policy=executor_policy,
+            workspace_session=WorkspaceSession(workspace_root),
             runtime_snapshot=runtime_snapshot,
         )
         runtime_bundle.instruction_view = self.instruction_resolver.resolve(runtime_bundle)

@@ -8,6 +8,7 @@ from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
 from app.runtime.runtime_assembler import RuntimeAssembler
+from app.runtime.workspace.workspace_session import WorkspaceSession
 from app.runtime.workspace.workspace_resolver import WorkspaceResolver
 from app.config import Settings
 
@@ -54,7 +55,7 @@ def test_orchestrator_runtime_exposes_tool_registry_contract() -> None:
     assert runtime.tool_policy["system_toolset"] == "orchestrator_default"
 
 
-def test_worker_runtime_keeps_internal_tools_out_of_function_schemas() -> None:
+def test_worker_runtime_exposes_code_tool_definition() -> None:
     assembler = _assembler()
     agent_id = uuid4()
     run_id = uuid4()
@@ -74,9 +75,33 @@ def test_worker_runtime_keeps_internal_tools_out_of_function_schemas() -> None:
         ),
     )
     assert set(runtime.tool_registry.tools) == {"code_tool"}
-    assert runtime.tool_view.model_tools == []
-    assert runtime.tool_view.tool_choice is None
+    assert [item["function"]["name"] for item in runtime.tool_view.model_tools] == ["code_tool"]
+    assert runtime.tool_view.tool_choice == "auto"
     assert runtime.tool_view.runtime_tools_enabled is True
+
+
+def test_runtime_assembler_injects_workspace_session() -> None:
+    assembler = _assembler()
+    agent_id = uuid4()
+    run_id = uuid4()
+
+    runtime = assembler.assemble(
+        AgentRunModel(
+            run_id=run_id,
+            agent_id=agent_id,
+            agent_kind="worker",
+            workspace_id=uuid4(),
+            root_run_id=run_id,
+        ),
+        AgentModel(
+            agent_id=agent_id,
+            agent_name="Worker",
+            agent_kind="worker",
+        ),
+    )
+
+    assert isinstance(runtime.workspace_session, WorkspaceSession)
+    assert str(runtime.workspace_session.workspace_root).endswith("backend-python")
 
 
 def test_orchestrator_runtime_no_longer_forces_plan_tool() -> None:

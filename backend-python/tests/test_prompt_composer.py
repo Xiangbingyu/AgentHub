@@ -8,6 +8,7 @@ from app.runtime.instruction.instruction_resolver import InstructionItem, Instru
 from app.runtime.prompt.prompt_composer import PromptComposer
 from app.runtime.runtime_assembler import RuntimeBundle
 from app.runtime.tools.tool_resolver import ToolResolver
+from app.runtime.workspace.workspace_session import WorkspaceSession
 
 
 def test_prompt_composer_builds_prompt_view() -> None:
@@ -70,3 +71,42 @@ def test_prompt_composer_builds_prompt_view() -> None:
     assert "workspace_root=E:/workspace" in prompt_view.context_prompt
     assert "input_type=user_input" in prompt_view.context_prompt
     assert prompt_view.system_sections[0].name == "provider"
+
+
+def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
+    runtime = RuntimeBundle(
+        agent_run=AgentRunModel(
+            run_id=uuid4(),
+            agent_id=uuid4(),
+            agent_kind="worker",
+            workspace_id=uuid4(),
+        ),
+        agent=AgentModel(
+            agent_id=uuid4(),
+            agent_name="Worker",
+            agent_kind="worker",
+        ),
+        workspace_root="E:/workspace",
+        role="worker",
+        prompt_policy={"system_profile": "worker"},
+        tool_policy={
+            "system_toolset": "worker_default",
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
+        },
+        executor_policy={"kind": "internal_llm"},
+        workspace_session=WorkspaceSession("E:/Github/AgentHub-weon/backend-python"),
+    )
+    runtime.tool_view = ToolResolver(PlanRepository()).resolve(runtime)
+    input_event = InputEventModel(
+        input_id=uuid4(),
+        run_id=runtime.agent_run.run_id,
+        type=InputEventType.user_input,
+        payload={"content": "write code"},
+        idempotency_key="k2",
+    )
+
+    prompt_view = PromptComposer().compose(runtime, input_event)
+
+    assert "model_visible_tools=code_tool" in prompt_view.system_prompt

@@ -143,7 +143,10 @@ def test_internal_worker_dispatches_tool_calls_before_persisting_success() -> No
                 {
                     "id": "tool_1",
                     "type": "function",
-                    "function": {"name": "code_tool", "arguments": "{}"},
+                    "function": {
+                        "name": "code_tool",
+                        "arguments": '{"action":"list_files","path":"."}',
+                    },
                 }
             ],
             raw={"provider": "test"},
@@ -152,9 +155,10 @@ def test_internal_worker_dispatches_tool_calls_before_persisting_success() -> No
 
     called = {}
 
-    def record_call(*, run_id, workspace_id, arguments):
+    def record_call(*, run_id, workspace_id, runtime, arguments):
         called["run_id"] = run_id
         called["workspace_id"] = workspace_id
+        called["runtime"] = runtime
         called["arguments"] = arguments
         return None
 
@@ -176,7 +180,9 @@ def test_internal_worker_dispatches_tool_calls_before_persisting_success() -> No
     assert response.status == "accepted"
     assert called["run_id"] == run.run_id
     assert called["workspace_id"] == run.workspace_id
-    assert called["arguments"] == {}
+    assert called["runtime"] is runtime_bundle
+    assert called["arguments"].action == "list_files"
+    assert called["arguments"].path == "."
     assert updated_run is not None
     assert updated_run.status == "completed"
 

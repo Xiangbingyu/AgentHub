@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from app.repositories.plan_repository import PlanRepository
+from app.schemas.code_tool import CodeToolRequest, build_code_tool_definition
 from app.schemas.delegate_tool import DelegateToolRequest, build_delegate_tool_definition
 from app.runtime.tools.tool_registry import ToolRegistry, ToolSpec, default_invoke
 from app.schemas.plan_tool import PlanToolRequest, build_plan_tool_definition
@@ -38,6 +39,7 @@ def _invoke_plan_tool(tool: object, runtime: RuntimeBundle, request: PlanToolReq
     return tool.run(
         run_id=runtime.agent_run.run_id,
         workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
         request=request,
     )
 
@@ -117,6 +119,8 @@ class ToolResolver:
                 ToolSpec(
                     name="code_tool",
                     tool=CodeTool(),
+                    definition=build_code_tool_definition(),
+                    request_model=CodeToolRequest,
                     invoke=default_invoke,
                 )
             )
