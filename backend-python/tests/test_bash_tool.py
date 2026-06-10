@@ -212,3 +212,29 @@ def test_bash_tool_truncates_large_output(tmp_path: Path) -> None:
 
     assert result["metadata"]["truncated"] is True
     assert "...output truncated..." in result["output"]
+
+
+def test_bash_tool_moves_file_with_powershell_command(tmp_path: Path) -> None:
+    source_path = tmp_path / "test1" / "bash_tool_test1.md"
+    target_path = tmp_path / "test2" / "bash_tool_test1.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("test\n", encoding="utf-8")
+
+    tool = BashTool()
+    runtime = _runtime(tmp_path)
+
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": f'Move-Item -LiteralPath "{source_path}" -Destination "{target_path}"',
+            "description": "Moves test file",
+        },
+    )
+
+    assert result["metadata"]["exit_code"] == 0
+    assert not source_path.exists()
+    assert target_path.exists()
+    assert target_path.read_text(encoding="utf-8").strip() == "test"

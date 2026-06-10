@@ -18,11 +18,12 @@ class BashTool:
         cwd = self._resolve_workdir(runtime.workspace_root, request.workdir)
         self._check_policy(runtime.tool_policy, request.command)
         timeout_ms = request.timeout or self.DEFAULT_TIMEOUT_MS
+        command = self._build_command(request.command)
         try:
             completed = subprocess.run(
-                request.command,
+                command,
                 cwd=str(cwd),
-                shell=True,
+                shell=isinstance(command, str),
                 capture_output=True,
                 text=True,
                 timeout=timeout_ms / 1000,
@@ -58,6 +59,18 @@ class BashTool:
                 "command": request.command,
             },
         }
+
+    def _build_command(self, command: str) -> str | list[str]:
+        if sys.platform == "win32":
+            return [
+                "powershell",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ]
+        return command
 
     def _resolve_workdir(self, workspace_root: str, workdir: str | None) -> Path:
         root = Path(workspace_root).resolve()
