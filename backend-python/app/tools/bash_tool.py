@@ -17,14 +17,34 @@ class BashTool:
         request = arguments if isinstance(arguments, BashToolRequest) else BashToolRequest.model_validate(arguments)
         cwd = self._resolve_workdir(runtime.workspace_root, request.workdir)
         self._check_policy(runtime.tool_policy, request.command)
-        completed = subprocess.run(
-            request.command,
-            cwd=str(cwd),
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=(request.timeout or self.DEFAULT_TIMEOUT_MS) / 1000,
-        )
+        timeout_ms = request.timeout or self.DEFAULT_TIMEOUT_MS
+        try:
+            completed = subprocess.run(
+                request.command,
+                cwd=str(cwd),
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout_ms / 1000,
+            )
+        except subprocess.TimeoutExpired as exc:
+            output, truncated = self._truncate_output(exc.stdout or "", exc.stderr or "")
+            if output == "(no output)":
+                output = f"Command timed out after {timeout_ms} ms"
+            else:
+                output = output + f"\n\nCommand timed out after {timeout_ms} ms"
+            return {
+                "title": request.description,
+                "output": output,
+                "metadata": {
+                    "exit_code": None,
+                    "timed_out": True,
+                    "aborted": False,
+                    "truncated": truncated,
+                    "cwd": str(cwd),
+                    "command": request.command,
+                },
+            }
         output, truncated = self._truncate_output(completed.stdout, completed.stderr)
         return {
             "title": request.description,

@@ -173,3 +173,42 @@ def test_bash_tool_denies_multi_command_input_if_any_segment_is_denied(tmp_path:
         assert "bash command denied by policy" in str(exc)
     else:
         raise AssertionError("expected denied command segment to block execution")
+
+
+def test_bash_tool_returns_timeout_metadata_when_command_expires(tmp_path: Path) -> None:
+    tool = BashTool()
+    runtime = _runtime(tmp_path)
+
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": 'python -c "import time; time.sleep(1)"',
+            "description": "Sleeps briefly",
+            "timeout": 10,
+        },
+    )
+
+    assert result["metadata"]["exit_code"] is None
+    assert result["metadata"]["timed_out"] is True
+    assert result["metadata"]["aborted"] is False
+    assert "timed out" in result["output"].lower()
+
+
+def test_bash_tool_truncates_large_output(tmp_path: Path) -> None:
+    tool = BashTool()
+    runtime = _runtime(tmp_path)
+
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": 'python -c "print(\'a\' * 20000)"',
+            "description": "Prints large output",
+        },
+    )
+
+    assert result["metadata"]["truncated"] is True
+    assert "...output truncated..." in result["output"]
