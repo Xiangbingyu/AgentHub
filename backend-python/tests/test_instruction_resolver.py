@@ -2,11 +2,17 @@ from uuid import uuid4
 
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
-from app.runtime.runtime_assembler import RuntimeBundle
 from app.runtime.instruction.instruction_resolver import InstructionResolver
+from app.runtime.runtime_assembler import RuntimeBundle
 
 
-def _build_runtime_bundle(workspace_root: str, executor_policy: dict | None = None) -> RuntimeBundle:
+def _build_runtime_bundle(workspace_root: str, executor_config: dict | None = None) -> RuntimeBundle:
+    tool_config = {
+        "tools": [{"name": "code_tool", "enabled": True, "options": {}}],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
     return RuntimeBundle(
         agent_run=AgentRunModel(
             run_id=uuid4(),
@@ -18,12 +24,14 @@ def _build_runtime_bundle(workspace_root: str, executor_policy: dict | None = No
             agent_id=uuid4(),
             agent_name="Worker",
             agent_kind="worker",
+            tool_config=tool_config,
+            executor_config=executor_config or {"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         ),
         workspace_root=workspace_root,
         role="worker",
-        prompt_policy={"system_profile": "framework_worker"},
-        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
-        executor_policy=executor_policy or {"kind": "internal_llm"},
+        prompt_policy={"system_profile": "worker"},
+        tool_config=tool_config,
+        executor_config=executor_config or {"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
     )
 
 
@@ -46,7 +54,7 @@ def test_instruction_resolver_reads_claude_file_for_claude_framework(tmp_path) -
     view = InstructionResolver().resolve(
         _build_runtime_bundle(
             str(workspace_root),
-            executor_policy={"kind": "framework_cli", "framework": "claude"},
+            executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test", "framework": "claude"},
         )
     )
 

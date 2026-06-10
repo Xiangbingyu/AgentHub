@@ -10,8 +10,8 @@ from app.runtime.tools.tool_resolver import ToolResolver
 def _build_runtime_bundle(
     *,
     role: str,
-    tool_policy: dict,
-    executor_policy: dict,
+    tool_config: dict,
+    executor_config: dict,
 ) -> RuntimeBundle:
     return RuntimeBundle(
         agent_run=AgentRunModel(
@@ -25,25 +25,31 @@ def _build_runtime_bundle(
             agent_id=uuid4(),
             agent_name=f"{role}-agent",
             agent_kind=role,
+            tool_config=tool_config,
+            executor_config=executor_config,
         ),
         workspace_root="E:/workspace",
         role=role,
         prompt_policy={"system_profile": role},
-        tool_policy=tool_policy,
-        executor_policy=executor_policy,
+        tool_config=tool_config,
+        executor_config=executor_config,
     )
 
 
-def test_tool_resolver_builds_orchestrator_system_tool_view() -> None:
+def test_tool_resolver_builds_orchestrator_explicit_tool_view() -> None:
     runtime = _build_runtime_bundle(
         role="orchestrator",
-        tool_policy={
-            "system_toolset": "orchestrator_default",
+        tool_config={
+            "tools": [
+                {"name": "plan_tool", "enabled": True, "options": {}},
+                {"name": "delegate_tool", "enabled": True, "options": {}},
+                {"name": "bash_tool", "enabled": True, "options": {}},
+            ],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
     )
 
     view = ToolResolver(PlanRepository()).resolve(runtime)
@@ -51,40 +57,48 @@ def test_tool_resolver_builds_orchestrator_system_tool_view() -> None:
     assert [item.name for item in view.system_tools] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert [item["function"]["name"] for item in view.model_tools] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert view.tool_choice == "auto"
+    assert view.system_toolset == "explicit"
     assert "plan_tool" in runtime.tool_registry.tools
     assert "delegate_tool" in runtime.tool_registry.tools
     assert "bash_tool" in runtime.tool_registry.tools
 
 
-def test_tool_resolver_exposes_framework_capabilities_without_internal_tools() -> None:
+def test_tool_resolver_skips_disabled_explicit_tools() -> None:
     runtime = _build_runtime_bundle(
         role="worker",
-        tool_policy={"system_toolset": "none", "model_tools_enabled": False, "runtime_tools_enabled": False},
-        executor_policy={
-            "kind": "framework_cli",
-            "framework": "claude",
-            "framework_options": {"allowed_tools": ["Read", "Edit"]},
+        tool_config={
+            "tools": [
+                {"name": "code_tool", "enabled": True, "options": {}},
+                {"name": "bash_tool", "enabled": True, "options": {}},
+                {"name": "plan_tool", "enabled": False, "options": {}},
+            ],
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
         },
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
     )
 
     view = ToolResolver(PlanRepository()).resolve(runtime)
 
-    assert view.system_tools == []
-    assert view.model_tools == []
-    assert view.framework_capabilities == ["Read", "Edit"]
-    assert runtime.tool_registry.tools == {}
+    assert [item.name for item in view.system_tools] == ["code_tool", "bash_tool"]
+    assert [item["function"]["name"] for item in view.model_tools] == ["code_tool", "bash_tool"]
+    assert "plan_tool" not in runtime.tool_registry.tools
 
 
 def test_tool_resolver_builds_worker_code_and_bash_tool_view() -> None:
     runtime = _build_runtime_bundle(
         role="worker",
-        tool_policy={
-            "system_toolset": "worker_default",
+        tool_config={
+            "tools": [
+                {"name": "code_tool", "enabled": True, "options": {}},
+                {"name": "bash_tool", "enabled": True, "options": {}},
+            ],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
     )
 
     view = ToolResolver(PlanRepository()).resolve(runtime)

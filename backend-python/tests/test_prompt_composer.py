@@ -12,6 +12,16 @@ from app.runtime.workspace.workspace_session import WorkspaceSession
 
 
 def test_prompt_composer_builds_prompt_view() -> None:
+    tool_config = {
+        "tools": [
+            {"name": "plan_tool", "enabled": True, "options": {}},
+            {"name": "delegate_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
     runtime = RuntimeBundle(
         agent_run=AgentRunModel(
             run_id=uuid4(),
@@ -23,6 +33,7 @@ def test_prompt_composer_builds_prompt_view() -> None:
             agent_id=uuid4(),
             agent_name="Orchestrator",
             agent_kind="orchestrator",
+            tool_config=tool_config,
         ),
         workspace_root="E:/workspace",
         role="orchestrator",
@@ -31,13 +42,8 @@ def test_prompt_composer_builds_prompt_view() -> None:
             "include_user_prompt": True,
             "user_prompt": "Always summarize next action.",
         },
-        tool_policy={
-            "system_toolset": "orchestrator_default",
-            "model_tools_enabled": True,
-            "runtime_tools_enabled": True,
-            "auto_tool_choice": True,
-        },
-        executor_policy={"kind": "internal_llm"},
+        tool_config=tool_config,
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
     )
     runtime.instruction_view = InstructionView(
         items=[
@@ -63,7 +69,8 @@ def test_prompt_composer_builds_prompt_view() -> None:
     assert "[ENVIRONMENT]" in prompt_view.system_prompt
     assert "[INSTRUCTION]" in prompt_view.system_prompt
     assert "role=orchestrator" in prompt_view.system_prompt
-    assert "model_visible_tools=plan_tool" in prompt_view.system_prompt
+    assert "system_toolset=" not in prompt_view.system_prompt
+    assert "model_visible_tools=plan_tool,delegate_tool,bash_tool" in prompt_view.system_prompt
     assert "project instructions" in prompt_view.system_prompt
     assert "Always summarize next action." in prompt_view.system_prompt
     assert "orchestrator is responsible for planning and plan maintenance" in prompt_view.system_prompt
@@ -76,6 +83,15 @@ def test_prompt_composer_builds_prompt_view() -> None:
 
 
 def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
+    tool_config = {
+        "tools": [
+            {"name": "code_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
     runtime = RuntimeBundle(
         agent_run=AgentRunModel(
             run_id=uuid4(),
@@ -87,17 +103,13 @@ def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
             agent_id=uuid4(),
             agent_name="Worker",
             agent_kind="worker",
+            tool_config=tool_config,
         ),
         workspace_root="E:/workspace",
         role="worker",
         prompt_policy={"system_profile": "worker"},
-        tool_policy={
-            "system_toolset": "worker_default",
-            "model_tools_enabled": True,
-            "runtime_tools_enabled": True,
-            "auto_tool_choice": True,
-        },
-        executor_policy={"kind": "internal_llm"},
+        tool_config=tool_config,
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         workspace_session=WorkspaceSession("E:/Github/AgentHub-weon/backend-python"),
     )
     runtime.tool_view = ToolResolver(PlanRepository()).resolve(runtime)
@@ -111,6 +123,7 @@ def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
 
     prompt_view = PromptComposer().compose(runtime, input_event)
 
+    assert "system_toolset=" not in prompt_view.system_prompt
     assert "model_visible_tools=code_tool,bash_tool" in prompt_view.system_prompt
     assert "code_tool" in prompt_view.system_prompt
     assert "bash_tool" in prompt_view.system_prompt

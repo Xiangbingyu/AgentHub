@@ -61,8 +61,8 @@ class PromptComposer:
         ]
 
     def _build_provider_section(self, runtime: RuntimeBundle) -> str:
-        executor_kind = runtime.executor_policy.get("kind", "internal_llm")
-        provider = runtime.executor_policy.get("provider") or runtime.executor_policy.get("framework") or "default"
+        executor_kind = runtime.executor_config.get("kind", "internal_llm")
+        provider = runtime.executor_config.get("provider") or "default"
         prompt_profile = str(runtime.prompt_policy.get("system_profile", ""))
         return (
             "[PROVIDER]\n"
@@ -94,16 +94,8 @@ class PromptComposer:
 
     def _build_tool_section(self, runtime: RuntimeBundle) -> str:
         tool_view = runtime.tool_view
-        if tool_view is None or not runtime.uses_internal_executor():
-            capabilities = []
-            if tool_view is not None:
-                capabilities = tool_view.framework_capabilities
-            visible = ",".join(capabilities) if capabilities else "(none)"
-            return (
-                "[TOOLS]\n"
-                "tool_runtime=external_framework\n"
-                f"framework_capabilities={visible}"
-            )
+        if tool_view is None:
+            return "[TOOLS]\ntool_runtime=internal\nruntime_toolset=(none)\nmodel_visible_tools=(none)"
 
         system_tools = ",".join(item.name for item in tool_view.system_tools) or "(none)"
         model_tools = [item["function"]["name"] for item in tool_view.model_tools]
@@ -111,7 +103,6 @@ class PromptComposer:
         return (
             "[TOOLS]\n"
             "tool_runtime=internal\n"
-            f"system_toolset={tool_view.system_toolset}\n"
             f"runtime_toolset={system_tools}\n"
             f"model_visible_tools={visible}"
         )
