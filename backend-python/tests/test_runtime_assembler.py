@@ -40,12 +40,12 @@ def test_orchestrator_runtime_exposes_tool_registry_contract() -> None:
         ),
     )
     assert runtime.role == "orchestrator"
-    assert set(runtime.tool_registry.tools) == {"plan_tool", "delegate_tool"}
+    assert set(runtime.tool_registry.tools) == {"plan_tool", "delegate_tool", "bash_tool"}
     assert runtime.instruction_view is not None
     assert runtime.tool_view is not None
     definitions = runtime.tool_registry.get_tool_definitions()
-    assert len(definitions) == 2
-    assert [item["function"]["name"] for item in definitions] == ["plan_tool", "delegate_tool"]
+    assert len(definitions) == 3
+    assert [item["function"]["name"] for item in definitions] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert runtime.tool_view.model_tools == definitions
     assert runtime.tool_view.tool_choice == "auto"
     assert runtime.tool_view.runtime_tools_enabled is True

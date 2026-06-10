@@ -114,6 +114,15 @@ class ToolResolver:
                     invoke=_invoke_delegate_tool,
                 )
             )
+            registry.register(
+                ToolSpec(
+                    name="bash_tool",
+                    tool=BashTool(),
+                    definition=build_bash_tool_definition(),
+                    request_model=BashToolRequest,
+                    invoke=default_invoke,
+                )
+            )
             return registry
 
         if system_toolset == "worker_default":

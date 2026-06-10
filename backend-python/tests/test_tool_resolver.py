@@ -48,11 +48,12 @@ def test_tool_resolver_builds_orchestrator_system_tool_view() -> None:
 
     view = ToolResolver(PlanRepository()).resolve(runtime)
 
-    assert [item.name for item in view.system_tools] == ["plan_tool", "delegate_tool"]
-    assert [item["function"]["name"] for item in view.model_tools] == ["plan_tool", "delegate_tool"]
+    assert [item.name for item in view.system_tools] == ["plan_tool", "delegate_tool", "bash_tool"]
+    assert [item["function"]["name"] for item in view.model_tools] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert view.tool_choice == "auto"
     assert "plan_tool" in runtime.tool_registry.tools
     assert "delegate_tool" in runtime.tool_registry.tools
+    assert "bash_tool" in runtime.tool_registry.tools
 
 
 def test_tool_resolver_exposes_framework_capabilities_without_internal_tools() -> None:
