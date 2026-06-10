@@ -134,6 +134,16 @@ def test_delegate_chain_internal_worker_uses_code_tool_to_write_workspace_file(m
                 ],
                 raw={"provider": "test"},
             ),
+            LlmResponse(
+                content="plan callback processed",
+                tool_calls=[],
+                raw={"provider": "test"},
+            ),
+            LlmResponse(
+                content="waiting for worker callback",
+                tool_calls=[],
+                raw={"provider": "test"},
+            ),
         ]
     )
 
@@ -186,6 +196,6 @@ def test_delegate_chain_internal_worker_uses_code_tool_to_write_workspace_file(m
     assert Path(orchestrator_plan.file_path).exists()
     assert Path(orchestrator_plan.file_path).parent == Path(__file__).resolve().parents[1] / ".AgentHub" / "plans"
 
-    assert [call["role"] for call in executor.calls] == ["orchestrator", "worker", "orchestrator"]
-    assert executor.calls[0]["tools"] == ["plan_tool", "delegate_tool"]
-    assert executor.calls[1]["tools"] == ["code_tool"]
+    assert [call["role"] for call in executor.calls] == ["orchestrator", "worker", "orchestrator", "orchestrator", "orchestrator"]
+    assert executor.calls[0]["tools"] == ["plan_tool", "delegate_tool", "bash_tool"]
+    assert executor.calls[1]["tools"] == ["code_tool", "bash_tool"]

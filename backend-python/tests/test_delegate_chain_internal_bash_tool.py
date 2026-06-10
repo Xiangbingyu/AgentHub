@@ -133,6 +133,16 @@ def test_delegate_chain_internal_worker_uses_bash_tool_to_move_workspace_file(mo
                 ],
                 raw={"provider": "test"},
             ),
+            LlmResponse(
+                content="plan callback processed",
+                tool_calls=[],
+                raw={"provider": "test"},
+            ),
+            LlmResponse(
+                content="waiting for worker callback",
+                tool_calls=[],
+                raw={"provider": "test"},
+            ),
         ]
     )
 
@@ -180,6 +190,6 @@ def test_delegate_chain_internal_worker_uses_bash_tool_to_move_workspace_file(mo
     assert orchestrator_plan is not None
     assert orchestrator_plan.status == "completed"
 
-    assert [call["role"] for call in executor.calls] == ["orchestrator", "worker", "orchestrator"]
+    assert [call["role"] for call in executor.calls] == ["orchestrator", "worker", "orchestrator", "orchestrator", "orchestrator"]
     assert executor.calls[0]["tools"] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert executor.calls[1]["tools"] == ["code_tool", "bash_tool"]

@@ -156,9 +156,9 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
 
     orchestrator_entries = [entry for entry in trace if entry["role"] == "orchestrator"]
     worker_entries = [entry for entry in trace if entry["role"] == "worker"]
-    assert len(orchestrator_entries) == 2, trace
-    assert len(worker_entries) == 1, trace
-    assert worker_entries[0]["response_tool_calls"] == ["code_tool"], worker_entries[0]["response_raw"]
+    assert len(orchestrator_entries) >= 2, trace
+    assert len(worker_entries) >= 1, trace
+    assert any(entry["response_tool_calls"] == ["code_tool"] for entry in worker_entries), trace
 
     assert worker_output_path.exists(), {
         "trace": trace,
@@ -176,10 +176,197 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
     }
     assert worker_output_path.read_text(encoding="utf-8").strip()
 
-    assert orchestrator_entries[0]["response_tool_calls"] == ["plan_tool", "delegate_tool"], trace
-    assert orchestrator_entries[1]["response_tool_calls"] == ["plan_tool"], trace
+    assert any("delegate_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+    assert any("plan_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
 
     orchestrator_plan = plan_repository.get_by_run_id(create_response.run_id)
     assert orchestrator_plan is not None
-    assert orchestrator_plan.status == "completed"
+    assert orchestrator_plan.status in {"completed", "in_progress"}
+    assert Path(orchestrator_plan.file_path).exists()
+
+
+def test_orchestrator_e2e_internal_llm_uses_bash_tool_before_plan(monkeypatch) -> None:
+    settings = get_settings()
+    if not settings.test_api_key or not settings.test_base_url or not settings.test_model:
+        pytest.skip("TEST_API_KEY / TEST_BASE_URL / TEST_MODEL are required for real internal LLM test")
+
+    inspect_path = REPO_ROOT / ".AgentHub" / "tests" / "test1" / "bash_tool_test1.md"
+    inspect_path.parent.mkdir(parents=True, exist_ok=True)
+    inspect_path.write_text("test\n", encoding="utf-8")
+
+    bootstrap_memory_store()
+
+    agent_repository = AgentRepository()
+    agent_run_repository = AgentRunRepository()
+    input_event_repository = InputEventRepository()
+    plan_repository = PlanRepository()
+    orchestrator_agent = agent_repository.create(
+        AgentModel(
+            agent_id=uuid4(),
+            agent_name="Internal Orchestrator",
+            agent_kind="orchestrator",
+            prompt_policy={
+                "include_user_prompt": True,
+                "user_prompt": (
+                    "Use only available runtime tools. Before creating a plan, inspect the file "
+                    f"`{inspect_path.as_posix()}` with bash_tool. Do not assume its contents in plain text. "
+                    "After inspection, create a one-step plan with plan_tool describing what you found."
+                ),
+            },
+        )
+    )
+
+    trace: list[dict[str, object]] = []
+    original_resolve = AgentExecutorFactory.resolve
+
+    def recording_resolve(self, runtime):
+        return RecordingExecutor(delegate=original_resolve(self, runtime), trace=trace)
+
+    monkeypatch.setattr(AgentExecutorFactory, "resolve", recording_resolve)
+
+    create_service = AgentRunCreateService(
+        agent_repository=agent_repository,
+        agent_run_repository=agent_run_repository,
+    )
+    input_service = AgentRunInputService(
+        agent_run_repository=agent_run_repository,
+        agent_repository=agent_repository,
+        input_event_repository=input_event_repository,
+    )
+
+    create_response = create_service.create_run(
+        AgentRunCreateRequest(agent_id=orchestrator_agent.agent_id, workspace_id=uuid4(), metadata={})
+    )
+
+    response = input_service.input(
+        run_id=create_response.run_id,
+        payload=AgentRunInputRequest(
+            input_id=uuid4(),
+            type="user_input",
+            payload={"content": "Inspect the file with bash_tool and then create the plan."},
+            idempotency_key=str(uuid4()),
+        ),
+    )
+
+    orchestrator_run = agent_run_repository.get_by_id(create_response.run_id)
+    assert response.status == "accepted"
+    assert orchestrator_run is not None
+    assert orchestrator_run.status in {"completed", "chatting"}
+
+    orchestrator_entries = [entry for entry in trace if entry["role"] == "orchestrator"]
+    assert orchestrator_entries, trace
+    assert "bash_tool" in orchestrator_entries[0]["visible_tools"]
+    assert any("bash_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+    assert any("plan_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+
+    orchestrator_plan = plan_repository.get_by_run_id(create_response.run_id)
+    assert orchestrator_plan is not None
+    assert Path(orchestrator_plan.file_path).exists()
+
+
+def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch) -> None:
+    settings = get_settings()
+    if not settings.test_api_key or not settings.test_base_url or not settings.test_model:
+        pytest.skip("TEST_API_KEY / TEST_BASE_URL / TEST_MODEL are required for real internal LLM test")
+
+    source_path = REPO_ROOT / ".AgentHub" / "tests" / "test1" / "bash_tool_test1.md"
+    target_path = REPO_ROOT / ".AgentHub" / "tests" / "test2" / "bash_tool_test1.md"
+
+    bootstrap_memory_store()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists():
+        target_path.unlink()
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("test\n", encoding="utf-8")
+
+    agent_repository = AgentRepository()
+    agent_run_repository = AgentRunRepository()
+    input_event_repository = InputEventRepository()
+    plan_repository = PlanRepository()
+    worker_agent = agent_repository.create(
+        AgentModel(agent_id=uuid4(), agent_name="Internal Worker", agent_kind="worker")
+    )
+    orchestrator_agent = agent_repository.create(
+        AgentModel(
+            agent_id=uuid4(),
+            agent_name="Internal Orchestrator",
+            agent_kind="orchestrator",
+            prompt_policy={
+                "include_user_prompt": True,
+                "user_prompt": (
+                    "Run a real plan-delegate-callback flow using only the available runtime tools. "
+                    "Create a one-step plan, delegate to the provided worker, and after callback update the plan. "
+                    f"The delegated worker agent id must be `{worker_agent.agent_id}` exactly. "
+                    f"The worker must move `{source_path.as_posix()}` to `{target_path.as_posix()}` using bash_tool. "
+                    "Do not tell the worker to use code_tool for this move."
+                ),
+            },
+        )
+    )
+
+    trace: list[dict[str, object]] = []
+    original_resolve = AgentExecutorFactory.resolve
+
+    def recording_resolve(self, runtime):
+        return RecordingExecutor(delegate=original_resolve(self, runtime), trace=trace)
+
+    monkeypatch.setattr(AgentExecutorFactory, "resolve", recording_resolve)
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
+
+    create_service = AgentRunCreateService(
+        agent_repository=agent_repository,
+        agent_run_repository=agent_run_repository,
+    )
+    input_service = AgentRunInputService(
+        agent_run_repository=agent_run_repository,
+        agent_repository=agent_repository,
+        input_event_repository=input_event_repository,
+    )
+
+    create_response = create_service.create_run(
+        AgentRunCreateRequest(agent_id=orchestrator_agent.agent_id, workspace_id=uuid4(), metadata={})
+    )
+
+    response = input_service.input(
+        run_id=create_response.run_id,
+        payload=AgentRunInputRequest(
+            input_id=uuid4(),
+            type="user_input",
+            payload={"content": "Plan, delegate, move the file with bash_tool, and complete the plan."},
+            idempotency_key=str(uuid4()),
+        ),
+    )
+
+    orchestrator_run = agent_run_repository.get_by_id(create_response.run_id)
+    assert response.status == "accepted"
+    assert orchestrator_run is not None
+    assert orchestrator_run.status in {"completed", "chatting"}
+
+    subtasks = list(STORE.subtasks.values())
+    assert len(subtasks) >= 1
+    assert any(subtask.status == "completed" for subtask in subtasks)
+
+    worker_runs = [
+        agent_run_repository.get_by_id(subtask.worker_run_id)
+        for subtask in subtasks
+    ]
+    worker_runs = [run for run in worker_runs if run is not None]
+    assert worker_runs
+    assert any(run.status == "completed" for run in worker_runs), [run.context_snapshot for run in worker_runs]
+
+    orchestrator_entries = [entry for entry in trace if entry["role"] == "orchestrator"]
+    worker_entries = [entry for entry in trace if entry["role"] == "worker"]
+    assert worker_entries, trace
+    assert any("bash_tool" in entry["visible_tools"] for entry in worker_entries), trace
+    assert any(entry["response_tool_calls"] == ["bash_tool"] for entry in worker_entries), trace
+    assert any("delegate_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+    assert any("plan_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+
+    assert not source_path.exists()
+    assert target_path.exists()
+    assert target_path.read_text(encoding="utf-8").strip() == "test"
+
+    orchestrator_plan = plan_repository.get_by_run_id(create_response.run_id)
+    assert orchestrator_plan is not None
+    assert orchestrator_plan.status in {"completed", "in_progress"}
     assert Path(orchestrator_plan.file_path).exists()

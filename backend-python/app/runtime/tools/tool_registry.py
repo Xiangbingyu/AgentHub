@@ -45,7 +45,8 @@ class ToolRegistry:
                 return {"type": "function", "function": {"name": spec.name}}
         return None
 
-    def dispatch(self, runtime: Any, tool_calls: list[dict[str, Any]]) -> None:
+    def dispatch(self, runtime: Any, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         for tool_call in tool_calls:
             function = tool_call.get("function", {})
             tool_name = function.get("name")
@@ -60,7 +61,16 @@ class ToolRegistry:
             if spec.request_model is not None:
                 arguments = spec.request_model.model_validate(arguments)
 
-            spec.invoke(spec.tool, runtime, arguments)
+            result = spec.invoke(spec.tool, runtime, arguments)
+            results.append(
+                {
+                    "tool_call_id": tool_call.get("id"),
+                    "name": tool_name,
+                    "arguments": arguments,
+                    "result": result,
+                }
+            )
+        return results
 
     @property
     def tools(self) -> dict[str, object]:

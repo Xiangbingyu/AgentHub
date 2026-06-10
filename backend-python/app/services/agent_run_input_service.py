@@ -54,19 +54,17 @@ class AgentRunInputService:
         executor = self.executor_factory.resolve(runtime_bundle)
 
         try:
-            llm_response = executor.execute(
-                runtime_bundle,
-                LlmRequest(
-                    system_prompt=runtime_bundle.prompt_view.system_prompt,
-                    context_prompt=runtime_bundle.prompt_view.context_prompt,
-                    messages=[
-                        LlmMessage(role="user", content=self._build_user_message_content(input_event)),
-                    ],
-                    tools=list(runtime_bundle.tool_view.model_tools),
-                    tool_choice=runtime_bundle.tool_view.tool_choice,
-                    model=runtime_bundle.executor_policy.get("model", ""),
-                ),
+            initial_request = LlmRequest(
+                system_prompt=runtime_bundle.prompt_view.system_prompt,
+                context_prompt=runtime_bundle.prompt_view.context_prompt,
+                messages=[
+                    LlmMessage(role="user", content=self._build_user_message_content(input_event)),
+                ],
+                tools=list(runtime_bundle.tool_view.model_tools),
+                tool_choice=runtime_bundle.tool_view.tool_choice,
+                model=runtime_bundle.executor_policy.get("model", ""),
             )
+            llm_response = executor.execute(runtime_bundle, initial_request)
         except Exception as exc:
             if self._is_worker_run(runtime_bundle):
                 self._persist_worker_failure(runtime_bundle, error=str(exc))
@@ -82,10 +80,7 @@ class AgentRunInputService:
             return AgentRunInputResponse(run_id=run_id, status="accepted")
 
         if runtime_bundle.tool_view.runtime_tools_enabled:
-            runtime_bundle.tool_registry.dispatch(runtime_bundle, llm_response.tool_calls)
-            refreshed_run = self.agent_run_repository.get_by_id(run_id)
-            if refreshed_run is not None:
-                runtime_bundle.agent_run = refreshed_run
+            llm_response = self._run_internal_orchestrator_tool_loop(runtime_bundle, executor, initial_request, llm_response)
         loop_result = self.loop_engine.run(runtime_bundle, input_event)
 
         if loop_result.next_status is not None:
@@ -186,3 +181,47 @@ class AgentRunInputService:
         if isinstance(content, str) and content.strip():
             return content
         return str(input_event.payload)
+
+    def _run_internal_orchestrator_tool_loop(self, runtime_bundle, executor, request: LlmRequest, llm_response):
+        current_request = request
+        current_response = llm_response
+        max_rounds = 8
+
+        for _ in range(max_rounds):
+            if not current_response.tool_calls:
+                return current_response
+
+            tool_results = runtime_bundle.tool_registry.dispatch(runtime_bundle, current_response.tool_calls)
+            refreshed_run = self.agent_run_repository.get_by_id(runtime_bundle.agent_run.run_id)
+            if refreshed_run is not None:
+                runtime_bundle.agent_run = refreshed_run
+
+            messages = list(current_request.messages)
+            if current_response.content:
+                messages.append(LlmMessage(role="assistant", content=current_response.content))
+            for item in tool_results:
+                messages.append(
+                    LlmMessage(
+                        role="tool",
+                        content=self._format_tool_result_message(item),
+                    )
+                )
+
+            current_request = LlmRequest(
+                system_prompt=current_request.system_prompt,
+                context_prompt=current_request.context_prompt,
+                messages=messages,
+                tools=current_request.tools,
+                tool_choice=current_request.tool_choice,
+                model=current_request.model,
+            )
+            current_response = executor.execute(runtime_bundle, current_request)
+
+        return current_response
+
+    def _format_tool_result_message(self, item: dict[str, object]) -> str:
+        return (
+            f"tool_name={item['name']}\n"
+            f"tool_call_id={item['tool_call_id']}\n"
+            f"result={item['result']}"
+        )
