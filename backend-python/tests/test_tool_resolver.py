@@ -92,3 +92,24 @@ def test_tool_resolver_builds_worker_code_tool_view() -> None:
     assert [item["function"]["name"] for item in view.model_tools] == ["code_tool"]
     assert view.tool_choice == "auto"
     assert "code_tool" in runtime.tool_registry.tools
+
+
+def test_tool_resolver_builds_worker_code_and_bash_tool_view() -> None:
+    runtime = _build_runtime_bundle(
+        role="worker",
+        tool_policy={
+            "system_toolset": "worker_default",
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
+        },
+        executor_policy={"kind": "internal_llm"},
+    )
+
+    view = ToolResolver(PlanRepository()).resolve(runtime)
+
+    assert [item.name for item in view.system_tools] == ["code_tool", "bash_tool"]
+    assert [item["function"]["name"] for item in view.model_tools] == ["code_tool", "bash_tool"]
+    assert view.tool_choice == "auto"
+    assert "code_tool" in runtime.tool_registry.tools
+    assert "bash_tool" in runtime.tool_registry.tools
