@@ -33,8 +33,8 @@ class RuntimeBundle:
     workspace_root: str
     role: str
     prompt_policy: dict[str, Any]
-    tool_policy: dict[str, Any]
-    executor_policy: dict[str, Any]
+    tool_config: dict[str, Any]
+    executor_config: dict[str, Any]
     tool_registry: ToolRegistry = field(default_factory=ToolRegistry)
     workspace_session: WorkspaceSession | None = None
     instruction_view: Any | None = None
@@ -43,7 +43,7 @@ class RuntimeBundle:
     runtime_snapshot: dict[str, Any] = field(default_factory=dict)
 
     def uses_internal_executor(self) -> bool:
-        return self.executor_policy.get("kind", "internal_llm") == "internal_llm"
+        return self.executor_config.get("kind", "internal_llm") == "internal_llm"
 
 
 class RuntimeAssembler:
@@ -92,12 +92,12 @@ class RuntimeAssembler:
         runtime_snapshot = self.runtime_snapshot_resolver.resolve(agent_run, agent)
         workspace_root = self.workspace_resolver.resolve(runtime_snapshot)
         role = runtime_snapshot["role"]
-        executor_policy = self.executor_policy_resolver.resolve(runtime_snapshot)
-        prompt_policy = self.prompt_policy_resolver.resolve(runtime_snapshot, executor_policy=executor_policy)
-        tool_policy = self.tool_policy_resolver.resolve(
+        executor_config = self.executor_policy_resolver.resolve(runtime_snapshot)
+        prompt_policy = self.prompt_policy_resolver.resolve(runtime_snapshot, executor_policy=executor_config)
+        tool_config = self.tool_policy_resolver.resolve(
             runtime_snapshot,
             role=role,
-            executor_policy=executor_policy,
+            executor_policy=executor_config,
         )
 
         runtime_bundle = RuntimeBundle(
@@ -106,8 +106,8 @@ class RuntimeAssembler:
             workspace_root=workspace_root,
             role=role,
             prompt_policy=prompt_policy,
-            tool_policy=tool_policy,
-            executor_policy=executor_policy,
+            tool_config=tool_config,
+            executor_config=executor_config,
             workspace_session=WorkspaceSession(workspace_root),
             runtime_snapshot=runtime_snapshot,
         )

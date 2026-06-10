@@ -59,43 +59,35 @@ class ToolResolver:
         self.plan_repository = plan_repository
 
     def resolve(self, runtime: RuntimeBundle) -> ToolView:
-        if not runtime.uses_internal_executor():
-            runtime.tool_registry = ToolRegistry()
-            capabilities = list(runtime.executor_policy.get("framework_options", {}).get("allowed_tools") or [])
-            return ToolView(
-                system_toolset="none",
-                custom_tools=list(runtime.tool_policy.get("user_tools", [])),
-                framework_capabilities=capabilities,
-                model_tools_enabled=False,
-                runtime_tools_enabled=False,
-            )
-
-        system_toolset = str(runtime.tool_policy.get("system_toolset") or "none")
-        registry = self._build_registry(system_toolset)
+        registry = ToolRegistry()
+        configured_tools = runtime.tool_config.get("tools", [])
+        for item in configured_tools:
+            if not item.get("enabled", True):
+                continue
+            self._register_named_tool(registry, item.get("name", ""))
         runtime.tool_registry = registry
-        model_tools_enabled = bool(runtime.tool_policy.get("model_tools_enabled", True))
-        runtime_tools_enabled = bool(runtime.tool_policy.get("runtime_tools_enabled", True))
+        model_tools_enabled = bool(runtime.tool_config.get("model_tools_enabled", True))
+        runtime_tools_enabled = bool(runtime.tool_config.get("runtime_tools_enabled", True))
         model_tools = registry.get_tool_definitions() if model_tools_enabled else []
         tool_choice: dict[str, Any] | str | None = None
-        if model_tools and runtime.tool_policy.get("auto_tool_choice", False):
+        if model_tools and runtime.tool_config.get("auto_tool_choice", False):
             tool_choice = "auto"
 
         return ToolView(
-            system_toolset=system_toolset,
+            system_toolset="explicit",
             system_tools=[
                 ToolItem(name=spec.name, source="system", definition=spec.definition)
                 for spec in registry.specs.values()
             ],
-            custom_tools=list(runtime.tool_policy.get("user_tools", [])),
+            custom_tools=list(runtime.tool_config.get("user_tools", [])),
             model_tools=model_tools,
             model_tools_enabled=model_tools_enabled,
             runtime_tools_enabled=runtime_tools_enabled,
             tool_choice=tool_choice,
         )
 
-    def _build_registry(self, system_toolset: str) -> ToolRegistry:
-        registry = ToolRegistry()
-        if system_toolset == "orchestrator_default":
+    def _register_named_tool(self, registry: ToolRegistry, tool_name: str) -> None:
+        if tool_name == "plan_tool":
             registry.register(
                 ToolSpec(
                     name="plan_tool",
@@ -123,9 +115,9 @@ class ToolResolver:
                     invoke=default_invoke,
                 )
             )
-            return registry
+            return
 
-        if system_toolset == "worker_default":
+        if tool_name == "code_tool":
             registry.register(
                 ToolSpec(
                     name="code_tool",
@@ -144,4 +136,4 @@ class ToolResolver:
                     invoke=default_invoke,
                 )
             )
-        return registry
+            return

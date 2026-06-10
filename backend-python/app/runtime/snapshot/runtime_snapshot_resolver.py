@@ -12,14 +12,14 @@ class RuntimeSnapshotResolver:
 
         snapshot.setdefault("role", agent.role)
         snapshot.setdefault("prompt_policy", dict(agent.prompt_policy))
-        snapshot.setdefault("tool_policy", dict(agent.tool_policy))
-        snapshot.setdefault("executor_policy", dict(agent.executor_policy))
+        snapshot.setdefault("tool_config", agent.tool_config.model_dump())
+        snapshot.setdefault("executor_config", agent.executor_config.model_dump())
         return snapshot
 
     def build_default_snapshot(self, agent: AgentModel) -> dict[str, object]:
         return {
             "role": agent.role,
             "prompt_policy": dict(agent.prompt_policy),
-            "tool_policy": dict(agent.tool_policy),
-            "executor_policy": dict(agent.executor_policy),
+            "tool_config": agent.tool_config.model_dump(),
+            "executor_config": agent.executor_config.model_dump(),
         }

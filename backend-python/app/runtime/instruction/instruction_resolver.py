@@ -24,7 +24,7 @@ class InstructionResolver:
     def resolve(self, runtime: RuntimeBundle) -> InstructionView:
         workspace_root = Path(runtime.workspace_root)
         candidates = [workspace_root / "AGENTS.md"]
-        if (runtime.executor_policy.get("framework") or "").strip().lower() == "claude":
+        if (runtime.executor_config.get("framework") or "").strip().lower() == "claude":
             candidates.append(workspace_root / "CLAUDE.md")
 
         items: list[InstructionItem] = []

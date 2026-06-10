@@ -6,6 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.agent_executor_config import AgentExecutorConfig
+from app.models.agent_tool_config import AgentToolsetConfig
+
 
 class AgentModel(BaseModel):
     agent_id: UUID
@@ -13,8 +16,8 @@ class AgentModel(BaseModel):
     role: Literal["orchestrator", "worker"] | None = None
     agent_kind: Literal["orchestrator", "worker"] | None = None
     prompt_policy: dict[str, Any] = Field(default_factory=dict)
-    tool_policy: dict[str, Any] = Field(default_factory=dict)
-    executor_policy: dict[str, Any] = Field(default_factory=dict)
+    tool_config: AgentToolsetConfig = Field(default_factory=AgentToolsetConfig)
+    executor_config: AgentExecutorConfig = Field(default_factory=AgentExecutorConfig)
     status: str = "active"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
