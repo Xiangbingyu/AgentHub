@@ -55,7 +55,7 @@ def test_orchestrator_runtime_exposes_tool_registry_contract() -> None:
     assert runtime.tool_policy["system_toolset"] == "orchestrator_default"
 
 
-def test_worker_runtime_exposes_code_tool_definition() -> None:
+def test_worker_runtime_exposes_code_and_bash_tool_definitions() -> None:
     assembler = _assembler()
     agent_id = uuid4()
     run_id = uuid4()
@@ -74,8 +74,8 @@ def test_worker_runtime_exposes_code_tool_definition() -> None:
             agent_kind="worker",
         ),
     )
-    assert set(runtime.tool_registry.tools) == {"code_tool"}
-    assert [item["function"]["name"] for item in runtime.tool_view.model_tools] == ["code_tool"]
+    assert set(runtime.tool_registry.tools) == {"code_tool", "bash_tool"}
+    assert [item["function"]["name"] for item in runtime.tool_view.model_tools] == ["code_tool", "bash_tool"]
     assert runtime.tool_view.tool_choice == "auto"
     assert runtime.tool_view.runtime_tools_enabled is True
 
