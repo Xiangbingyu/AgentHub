@@ -105,3 +105,71 @@ def test_bash_tool_rejects_workdir_outside_workspace(tmp_path: Path) -> None:
         assert "workdir escapes workspace root" in str(exc)
     else:
         raise AssertionError("expected bash_tool to reject out-of-workspace workdir")
+
+
+def test_bash_tool_denies_command_when_prefix_rule_blocks_it(tmp_path: Path) -> None:
+    tool = BashTool()
+    runtime = _runtime(
+        tmp_path,
+        tool_policy={
+            "system_toolset": "worker_default",
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
+            "command_policies": {
+                "bash": {
+                    "*": "allow",
+                    "python -c *": "deny",
+                }
+            },
+        },
+    )
+
+    try:
+        tool.run(
+            run_id=runtime.agent_run.run_id,
+            workspace_id=runtime.agent_run.workspace_id,
+            runtime=runtime,
+            arguments={
+                "command": 'python -c "print(\'denied\')"',
+                "description": "Denied command",
+            },
+        )
+    except ValueError as exc:
+        assert "bash command denied by policy" in str(exc)
+    else:
+        raise AssertionError("expected bash_tool to reject denied command")
+
+
+def test_bash_tool_denies_multi_command_input_if_any_segment_is_denied(tmp_path: Path) -> None:
+    tool = BashTool()
+    runtime = _runtime(
+        tmp_path,
+        tool_policy={
+            "system_toolset": "worker_default",
+            "model_tools_enabled": True,
+            "runtime_tools_enabled": True,
+            "auto_tool_choice": True,
+            "command_policies": {
+                "bash": {
+                    "*": "allow",
+                    "python -c *": "deny",
+                }
+            },
+        },
+    )
+
+    try:
+        tool.run(
+            run_id=runtime.agent_run.run_id,
+            workspace_id=runtime.agent_run.workspace_id,
+            runtime=runtime,
+            arguments={
+                "command": 'echo safe && python -c "print(\'blocked\')"',
+                "description": "Mixed commands",
+            },
+        )
+    except ValueError as exc:
+        assert "bash command denied by policy" in str(exc)
+    else:
+        raise AssertionError("expected denied command segment to block execution")
