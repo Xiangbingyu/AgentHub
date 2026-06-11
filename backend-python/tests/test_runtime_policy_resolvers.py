@@ -39,6 +39,16 @@ def test_runtime_snapshot_resolver_builds_defaults_from_agent() -> None:
     assert [item["name"] for item in snapshot["tool_config"]["tools"]] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert snapshot["executor_config"]["provider"] == "openai_compatible"
     assert snapshot["executor_config"]["model"] == "gpt-test"
+    assert snapshot["skill_config"] == {
+        "builtins_enabled": True,
+        "paths": [],
+        "include_global": False,
+        "allowed_skills": [],
+    }
+    assert snapshot["mcp_config"] == {
+        "enabled": False,
+        "servers": [],
+    }
     assert "tool_policy" not in snapshot
     assert "executor_policy" not in snapshot
 

@@ -13,6 +13,7 @@ class AgentToolConfig(BaseModel):
         "bash_tool",
         "claude_code_tool",
         "opencode_tool",
+        "skill_tool",
         "question_tool",
     ]
     enabled: bool = True

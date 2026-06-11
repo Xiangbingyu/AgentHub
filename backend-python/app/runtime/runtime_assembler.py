@@ -10,8 +10,10 @@ from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
 from app.runtime.instruction.instruction_resolver import InstructionResolver
+from app.runtime.mcp.resolver import McpRuntimeResolver
 from app.runtime.policy.executor_config_resolver import ExecutorConfigResolver
 from app.runtime.policy.prompt_policy_resolver import PromptPolicyResolver
+from app.runtime.skills.resolver import SkillRuntimeResolver
 from app.runtime.policy.tool_config_resolver import ToolConfigResolver
 from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolver
 from app.runtime.tools.tool_registry import ToolRegistry
@@ -35,7 +37,11 @@ class RuntimeBundle:
     prompt_policy: dict[str, Any]
     tool_config: dict[str, Any]
     executor_config: dict[str, Any]
+    skill_config: dict[str, Any] = field(default_factory=dict)
+    mcp_config: dict[str, Any] = field(default_factory=dict)
     tool_registry: ToolRegistry = field(default_factory=ToolRegistry)
+    skill_registry: Any | None = None
+    mcp_runtime: dict[str, Any] = field(default_factory=dict)
     workspace_session: WorkspaceSession | None = None
     instruction_view: Any | None = None
     tool_view: Any | None = None
@@ -59,6 +65,8 @@ class RuntimeAssembler:
         runtime_snapshot_resolver: RuntimeSnapshotResolver | None = None,
         prompt_policy_resolver: PromptPolicyResolver | None = None,
         tool_config_resolver: ToolConfigResolver | None = None,
+        skill_runtime_resolver: SkillRuntimeResolver | None = None,
+        mcp_runtime_resolver: McpRuntimeResolver | None = None,
     ) -> None:
         self.agent_run_repository = agent_run_repository
         self.agent_repository = agent_repository
@@ -69,6 +77,8 @@ class RuntimeAssembler:
         self.runtime_snapshot_resolver = runtime_snapshot_resolver or RuntimeSnapshotResolver()
         self.prompt_policy_resolver = prompt_policy_resolver or PromptPolicyResolver()
         self.tool_config_resolver = tool_config_resolver or ToolConfigResolver()
+        self.skill_runtime_resolver = skill_runtime_resolver or SkillRuntimeResolver()
+        self.mcp_runtime_resolver = mcp_runtime_resolver or McpRuntimeResolver()
 
     def resolve(self, run_id: UUID) -> RuntimeContext:
         if self.agent_run_repository is None or self.agent_repository is None:
@@ -99,6 +109,13 @@ class RuntimeAssembler:
             role=role,
             executor_config=executor_config,
         )
+        skill_config = dict(runtime_snapshot.get("skill_config") or {})
+        mcp_config = dict(runtime_snapshot.get("mcp_config") or {})
+        skill_registry = self.skill_runtime_resolver.resolve(
+            workspace_root=workspace_root,
+            skill_config=skill_config,
+        )
+        mcp_runtime = self.mcp_runtime_resolver.resolve(mcp_config)
 
         runtime_bundle = RuntimeBundle(
             agent_run=agent_run,
@@ -107,7 +124,11 @@ class RuntimeAssembler:
             role=role,
             prompt_policy=prompt_policy,
             tool_config=tool_config,
+            skill_config=skill_config,
+            mcp_config=mcp_config,
             executor_config=executor_config,
+            skill_registry=skill_registry,
+            mcp_runtime=mcp_runtime,
             workspace_session=WorkspaceSession(workspace_root),
             runtime_snapshot=runtime_snapshot,
         )

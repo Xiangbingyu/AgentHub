@@ -129,3 +129,58 @@ def test_prompt_composer_lists_worker_code_tool_as_model_visible() -> None:
     assert "bash_tool" in prompt_view.system_prompt
     assert "move" in prompt_view.system_prompt or "rename" in prompt_view.system_prompt
     assert "first action" in prompt_view.system_prompt
+
+
+def test_prompt_composer_includes_available_skills_block() -> None:
+    tool_config = {
+        "tools": [
+            {"name": "code_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+    runtime = RuntimeBundle(
+        agent_run=AgentRunModel(
+            run_id=uuid4(),
+            agent_id=uuid4(),
+            agent_kind="worker",
+            workspace_id=uuid4(),
+        ),
+        agent=AgentModel(
+            agent_id=uuid4(),
+            agent_name="Worker",
+            agent_kind="worker",
+            tool_config=tool_config,
+        ),
+        workspace_root="E:/workspace",
+        role="worker",
+        prompt_policy={"system_profile": "worker"},
+        tool_config=tool_config,
+        executor_config={"provider": "openai_compatible", "model": "gpt-test"},
+        skill_config={"builtins_enabled": True, "paths": [], "include_global": False, "allowed_skills": []},
+        mcp_config={"enabled": False, "servers": []},
+        skill_registry=type(
+            "FakeSkillRegistry",
+            (),
+            {
+                "render_available_skills": lambda self: "<available_skills><skill><name>debugging</name><description>Debug failures</description></skill></available_skills>"
+            },
+        )(),
+        mcp_runtime={"enabled": False, "tools": []},
+        workspace_session=WorkspaceSession("E:/Github/AgentHub-weon/backend-python"),
+    )
+    runtime.tool_view = ToolResolver(PlanRepository()).resolve(runtime)
+    input_event = InputEventModel(
+        input_id=uuid4(),
+        run_id=runtime.agent_run.run_id,
+        type=InputEventType.user_input,
+        payload={"content": "write code"},
+        idempotency_key="k3",
+    )
+
+    prompt_view = PromptComposer().compose(runtime, input_event)
+
+    assert "<available_skills>" in prompt_view.system_prompt
+    assert "debugging" in prompt_view.system_prompt

@@ -32,6 +32,10 @@ def _build_runtime_bundle(workspace_root: str, executor_config: dict | None = No
         prompt_policy={"system_profile": "worker"},
         tool_config=tool_config,
         executor_config=executor_config or {"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+        skill_config={"builtins_enabled": True, "paths": [], "include_global": False, "allowed_skills": []},
+        mcp_config={"enabled": False, "servers": []},
+        skill_registry=None,
+        mcp_runtime={"enabled": False, "tools": []},
     )
 
 

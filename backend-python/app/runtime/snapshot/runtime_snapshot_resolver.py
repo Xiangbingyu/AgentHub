@@ -13,6 +13,8 @@ class RuntimeSnapshotResolver:
         snapshot.setdefault("role", agent.role)
         snapshot.setdefault("prompt_policy", dict(agent.prompt_policy))
         snapshot.setdefault("tool_config", agent.tool_config.model_dump())
+        snapshot.setdefault("skill_config", agent.skill_config.model_dump())
+        snapshot.setdefault("mcp_config", agent.mcp_config.model_dump())
         snapshot.setdefault("executor_config", agent.executor_config.model_dump())
         return snapshot
 
@@ -21,5 +23,7 @@ class RuntimeSnapshotResolver:
             "role": agent.role,
             "prompt_policy": dict(agent.prompt_policy),
             "tool_config": agent.tool_config.model_dump(),
+            "skill_config": agent.skill_config.model_dump(),
+            "mcp_config": agent.mcp_config.model_dump(),
             "executor_config": agent.executor_config.model_dump(),
         }

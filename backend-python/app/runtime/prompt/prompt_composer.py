@@ -41,6 +41,7 @@ class PromptComposer:
             self._section("environment", "runtime", build_environment_prompt(runtime)),
             self._section("instruction", "runtime", build_instruction_prompt(runtime)),
             self._build_project_instruction_section(runtime),
+            self._build_skill_section(runtime),
             self._section("role", "runtime", self._build_role_section(runtime)),
             self._section("tools", "runtime", self._build_tool_section(runtime)),
         ]
@@ -90,6 +91,21 @@ class PromptComposer:
             "[ROLE]\n"
             f"role={runtime.role}\n"
             f"system_profile={system_profile}"
+        )
+
+    def _build_skill_section(self, runtime: RuntimeBundle) -> PromptSection | None:
+        registry = getattr(runtime, "skill_registry", None)
+        if registry is None:
+            return None
+        rendered = registry.render_available_skills()
+        if not rendered:
+            return None
+        return self._section(
+            "skills",
+            "runtime",
+            "Skills provide specialized instructions and workflows for specific tasks.\n"
+            "Use the skill tool to load a skill when a task matches its description.\n\n"
+            f"{rendered}",
         )
 
     def _build_tool_section(self, runtime: RuntimeBundle) -> str:

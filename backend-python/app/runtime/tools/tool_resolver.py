@@ -9,6 +9,7 @@ from app.schemas.claude_code_tool import ClaudeCodeToolRequest, build_claude_cod
 from app.schemas.code_tool import CodeToolRequest, build_code_tool_definition
 from app.schemas.delegate_tool import DelegateToolRequest, build_delegate_tool_definition
 from app.schemas.opencode_tool import OpenCodeToolRequest, build_opencode_tool_definition
+from app.schemas.skill_tool import SkillToolRequest, build_skill_tool_definition
 from app.runtime.tools.tool_registry import ToolRegistry, ToolSpec, default_invoke
 from app.schemas.plan_tool import PlanToolRequest, build_plan_tool_definition
 from app.tools.bash_tool import BashTool
@@ -17,6 +18,7 @@ from app.tools.code_tool import CodeTool
 from app.tools.delegate_tool import DelegateTool
 from app.tools.opencode_tool import OpenCodeTool
 from app.tools.plan_tool import PlanTool
+from app.tools.skill_tool import SkillTool
 
 if TYPE_CHECKING:
     from app.runtime.runtime_assembler import RuntimeBundle
@@ -69,6 +71,8 @@ class ToolResolver:
             if not item.get("enabled", True):
                 continue
             self._register_named_tool(registry, item.get("name", ""))
+        for spec in runtime.mcp_runtime.get("tools", []):
+            registry.register(spec)
         runtime.tool_registry = registry
         model_tools_enabled = bool(runtime.tool_config.get("model_tools_enabled", True))
         runtime_tools_enabled = bool(runtime.tool_config.get("runtime_tools_enabled", True))
@@ -161,6 +165,18 @@ class ToolResolver:
                     tool=OpenCodeTool(),
                     definition=build_opencode_tool_definition(),
                     request_model=OpenCodeToolRequest,
+                    invoke=default_invoke,
+                )
+            )
+            return
+
+        if tool_name == "skill_tool":
+            registry.register(
+                ToolSpec(
+                    name="skill_tool",
+                    tool=SkillTool(),
+                    definition=build_skill_tool_definition(),
+                    request_model=SkillToolRequest,
                     invoke=default_invoke,
                 )
             )
