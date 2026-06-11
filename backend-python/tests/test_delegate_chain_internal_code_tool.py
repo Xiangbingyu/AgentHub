@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from app.database.bootstrap import bootstrap_memory_store
 from app.database.memory_store import STORE
-from app.llm.llm_executor import AgentExecutorFactory
 from app.llm.llm_types import LlmResponse
 from app.models.agent import AgentModel
 from app.repositories.agent_repository import AgentRepository
@@ -16,6 +15,31 @@ from app.schemas.agent_run_create import AgentRunCreateRequest
 from app.schemas.agent_run_input import AgentRunInputRequest
 from app.services.agent_run_create_service import AgentRunCreateService
 from app.services.agent_run_input_service import AgentRunInputService
+
+
+def _worker_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "code_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+
+
+def _orchestrator_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "plan_tool", "enabled": True, "options": {}},
+            {"name": "delegate_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
 
 
 class SequencedExecutor:
@@ -50,6 +74,7 @@ def test_delegate_chain_internal_worker_uses_code_tool_to_write_workspace_file(m
             agent_id=uuid4(),
             agent_name="Internal Worker",
             agent_kind="worker",
+            tool_config=_worker_tool_config(),
         )
     )
     orchestrator_agent = agent_repository.create(
@@ -57,6 +82,7 @@ def test_delegate_chain_internal_worker_uses_code_tool_to_write_workspace_file(m
             agent_id=uuid4(),
             agent_name="Internal Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
         )
     )
 
@@ -152,8 +178,9 @@ def test_delegate_chain_internal_worker_uses_code_tool_to_write_workspace_file(m
         agent_repository=agent_repository,
         input_event_repository=input_event_repository,
     )
-    monkeypatch.setattr(AgentExecutorFactory, "resolve", lambda self, runtime: executor)
+    service.executor_factory = lambda runtime: executor
     monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._build_run_input_service", lambda self: service)
 
     create_service = AgentRunCreateService(
         agent_repository=agent_repository,

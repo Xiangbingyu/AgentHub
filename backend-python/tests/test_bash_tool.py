@@ -11,7 +11,7 @@ from app.runtime.workspace.workspace_session import WorkspaceSession
 from app.tools.bash_tool import BashTool
 
 
-def _runtime(tmp_path: Path, tool_policy: dict | None = None) -> RuntimeBundle:
+def _runtime(tmp_path: Path, tool_config: dict | None = None) -> RuntimeBundle:
     return RuntimeBundle(
         agent_run=AgentRunModel(
             run_id=uuid4(),
@@ -27,15 +27,15 @@ def _runtime(tmp_path: Path, tool_policy: dict | None = None) -> RuntimeBundle:
         workspace_root=str(tmp_path),
         role="worker",
         prompt_policy={"system_profile": "worker"},
-        tool_policy=tool_policy
+        tool_config=tool_config
         or {
-            "system_toolset": "worker_default",
+            "tools": [{"name": "bash_tool", "enabled": True, "options": {}}],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
             "command_policies": {"bash": {"*": "allow"}},
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         tool_registry=ToolRegistry(),
         workspace_session=WorkspaceSession(str(tmp_path)),
     )
@@ -111,8 +111,8 @@ def test_bash_tool_denies_command_when_prefix_rule_blocks_it(tmp_path: Path) -> 
     tool = BashTool()
     runtime = _runtime(
         tmp_path,
-        tool_policy={
-            "system_toolset": "worker_default",
+        tool_config={
+            "tools": [{"name": "bash_tool", "enabled": True, "options": {}}],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
@@ -145,8 +145,8 @@ def test_bash_tool_denies_multi_command_input_if_any_segment_is_denied(tmp_path:
     tool = BashTool()
     runtime = _runtime(
         tmp_path,
-        tool_policy={
-            "system_toolset": "worker_default",
+        tool_config={
+            "tools": [{"name": "bash_tool", "enabled": True, "options": {}}],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,

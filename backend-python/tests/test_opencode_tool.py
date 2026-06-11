@@ -1,6 +1,5 @@
 from uuid import uuid4
 
-from app.llm.llm_types import LlmResponse
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
 from app.runtime.runtime_assembler import RuntimeBundle
@@ -39,14 +38,24 @@ def test_opencode_tool_uses_agent_tool_options(monkeypatch) -> None:
     from app.tools.opencode_tool import OpenCodeTool
 
     runtime_bundle = _runtime_bundle()
+    captured = {}
 
-    monkeypatch.setattr(
-        "app.tools.opencode_tool.ExternalCodeRunner.run",
-        lambda self, **kwargs: LlmResponse(content="opencode ok", raw=kwargs),
-    )
+    def fake_run(*args, **kwargs):
+        captured["command"] = args[0]
+        captured["cwd"] = kwargs["cwd"]
+        captured["timeout"] = kwargs["timeout"]
+        return type("Completed", (), {"stdout": '{"type":"text","part":{"type":"text","text":"opencode ok"}}', "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("app.tools.opencode_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("app.tools.framework_adapters.opencode_adapter.os.name", "posix")
 
     result = OpenCodeTool().run(runtime=runtime_bundle, arguments={"prompt": "Rename the function"})
 
     assert result["status"] == "ok"
     assert result["content"] == "opencode ok"
     assert result["framework"] == "opencode"
+    assert captured["cwd"] == runtime_bundle.workspace_root
+    assert captured["timeout"] == 60
+    assert "text" not in captured
+    assert "encoding" not in captured
+    assert "errors" not in captured

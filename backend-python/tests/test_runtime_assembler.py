@@ -57,7 +57,7 @@ def test_orchestrator_runtime_exposes_tool_registry_contract() -> None:
     assert runtime.tool_view.model_tools == definitions
     assert runtime.tool_view.tool_choice == "auto"
     assert runtime.tool_view.runtime_tools_enabled is True
-    assert runtime.executor_config["kind"] == "internal_llm"
+    assert runtime.executor_config["provider"] == "openai_compatible"
     assert runtime.workspace_root.endswith("backend-python")
     assert runtime.prompt_policy["system_profile"] == "orchestrator"
     assert [item["name"] for item in runtime.tool_config["tools"]] == ["plan_tool", "delegate_tool", "bash_tool"]

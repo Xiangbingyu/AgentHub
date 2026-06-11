@@ -44,6 +44,31 @@ def _build_service() -> tuple[AgentRunInputService, AgentRepository, AgentRunRep
     return service, agent_repository, agent_run_repository
 
 
+def _orchestrator_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "plan_tool", "enabled": True, "options": {}},
+            {"name": "delegate_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+
+
+def _worker_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "code_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+
+
 def test_worker_callback_moves_orchestrator_to_completed() -> None:
     service, agent_repository, agent_run_repository = _build_service()
     agent = agent_repository.create(
@@ -51,6 +76,7 @@ def test_worker_callback_moves_orchestrator_to_completed() -> None:
             agent_id=uuid4(),
             agent_name="Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
         )
     )
     run = agent_run_repository.create(
@@ -64,7 +90,7 @@ def test_worker_callback_moves_orchestrator_to_completed() -> None:
             runtime_snapshot={"role": "orchestrator"},
         )
     )
-    service.executor_factory.resolve = lambda runtime: StaticExecutor(LlmResponse(content="updated", tool_calls=[], raw={}))
+    service.executor_factory = lambda runtime: StaticExecutor(LlmResponse(content="updated", tool_calls=[], raw={}))
 
     response = service.input(
         run.run_id,
@@ -89,6 +115,7 @@ def test_internal_worker_input_marks_run_completed_and_persists_result() -> None
             agent_id=uuid4(),
             agent_name="Worker",
             agent_kind="worker",
+            tool_config=_worker_tool_config(),
         )
     )
     run = agent_run_repository.create(
@@ -101,7 +128,7 @@ def test_internal_worker_input_marks_run_completed_and_persists_result() -> None
             runtime_snapshot={"role": "worker"},
         )
     )
-    service.executor_factory.resolve = lambda runtime: StaticExecutor(
+    service.executor_factory = lambda runtime: StaticExecutor(
         LlmResponse(content="worker finished task", tool_calls=[], raw={"provider": "test"})
     )
 
@@ -130,6 +157,7 @@ def test_internal_worker_dispatches_tool_calls_before_persisting_success() -> No
             agent_id=uuid4(),
             agent_name="Worker",
             agent_kind="worker",
+            tool_config=_worker_tool_config(),
         )
     )
     run = agent_run_repository.create(
@@ -141,15 +169,18 @@ def test_internal_worker_dispatches_tool_calls_before_persisting_success() -> No
             root_run_id=uuid4(),
             runtime_snapshot={
                 "role": "worker",
-                "tool_policy": {
-                    "system_toolset": "worker_default",
+                "tool_config": {
+                    "tools": [
+                        {"name": "code_tool", "enabled": True, "options": {}},
+                        {"name": "bash_tool", "enabled": True, "options": {}},
+                    ],
                     "model_tools_enabled": False,
                     "runtime_tools_enabled": True,
                 },
             },
         )
     )
-    service.executor_factory.resolve = lambda runtime: StaticExecutor(
+    service.executor_factory = lambda runtime: StaticExecutor(
         LlmResponse(
             content="worker used code tool",
             tool_calls=[
@@ -207,6 +238,7 @@ def test_create_run_does_not_create_plan_until_plan_tool_is_used() -> None:
             agent_id=uuid4(),
             agent_name="Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
         )
     )
     from app.services.agent_run_create_service import AgentRunCreateService
@@ -234,6 +266,7 @@ def test_internal_orchestrator_continues_after_tool_call_to_reach_plan_tool() ->
             agent_id=uuid4(),
             agent_name="Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
         )
     )
     run = agent_run_repository.create(
@@ -287,7 +320,7 @@ def test_internal_orchestrator_continues_after_tool_call_to_reach_plan_tool() ->
             ),
         ]
     )
-    service.executor_factory.resolve = lambda runtime: executor
+    service.executor_factory = lambda runtime: executor
 
     response = service.input(
         run.run_id,

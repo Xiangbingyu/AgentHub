@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from uuid import uuid4
 
 from app.models.agent import AgentModel
@@ -25,18 +24,18 @@ def _runtime_bundle() -> RuntimeBundle:
             agent_name="Worker",
             agent_kind="worker",
             tool_config=tool_config,
-            executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+            executor_config={"provider": "openai_compatible", "model": "gpt-test"},
         ),
         workspace_root="E:/workspace",
         role="worker",
         prompt_policy={"system_profile": "worker"},
         tool_config=tool_config,
-        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+        executor_config={"provider": "openai_compatible", "model": "gpt-test"},
     )
 
 
-def test_external_code_runner_executes_claude_adapter(monkeypatch) -> None:
-    from app.tools.external_code_runner import ExternalCodeRunner
+def test_claude_code_tool_executes_adapter_inline(monkeypatch) -> None:
+    from app.tools.claude_code_tool import ClaudeCodeTool
 
     runtime = _runtime_bundle()
     captured = {}
@@ -45,19 +44,14 @@ def test_external_code_runner_executes_claude_adapter(monkeypatch) -> None:
         captured["command"] = args[0]
         captured["cwd"] = kwargs["cwd"]
         captured["timeout"] = kwargs["timeout"]
-        return SimpleNamespace(stdout='{"content":"done"}', stderr="", returncode=0)
+        return type("Completed", (), {"stdout": '{"content":"done"}', "stderr": "", "returncode": 0})()
 
-    monkeypatch.setattr("app.tools.external_code_runner.subprocess.run", fake_run)
-    monkeypatch.setattr("app.llm.framework_adapters.claude_code_adapter.os.name", "posix")
+    monkeypatch.setattr("app.tools.claude_code_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
 
-    response = ExternalCodeRunner().run(
-        runtime=runtime,
-        framework="claude",
-        tool_options={"command": "claude", "timeout_seconds": 90, "allowed_tools": ["Read", "Edit"]},
-        prompt="Update the file",
-    )
+    response = ClaudeCodeTool().run(runtime=runtime, arguments={"prompt": "Update the file"})
 
-    assert response.content == "done"
+    assert response["content"] == "done"
     assert captured["cwd"] == runtime.workspace_root
     assert captured["timeout"] == 90
     assert captured["command"][0].lower().endswith("claude") or captured["command"][0].lower().endswith("claude.cmd")

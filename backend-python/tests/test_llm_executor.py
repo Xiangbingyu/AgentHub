@@ -2,14 +2,13 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from app.config import get_settings
-from app.llm.framework_adapters.claude_code_adapter import ClaudeCodeAdapter
-from app.llm.framework_adapters.codex_cli_adapter import CodexCliAdapter
-from app.llm.framework_adapters.opencode_adapter import OpenCodeAdapter
-from app.llm.llm_executor import AgentExecutorFactory, InternalLlmExecutor, LlmExecutor, resolve_framework_adapter
+from app.llm.llm_executor import InternalLlmExecutor, LlmExecutor
 from app.llm.llm_types import LlmMessage, LlmRequest
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
 from app.runtime.runtime_assembler import RuntimeBundle
+from app.tools.framework_adapters.claude_code_adapter import ClaudeCodeAdapter
+from app.tools.framework_adapters.opencode_adapter import OpenCodeAdapter
 
 
 def _runtime_bundle() -> RuntimeBundle:
@@ -31,13 +30,13 @@ def _runtime_bundle() -> RuntimeBundle:
             agent_name="Worker",
             agent_kind="worker",
             tool_config=tool_config,
-            executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+            executor_config={"provider": "openai_compatible", "model": "gpt-test"},
         ),
         workspace_root="E:/workspace",
         role="worker",
         prompt_policy={"system_profile": "worker"},
         tool_config=tool_config,
-        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+        executor_config={"provider": "openai_compatible", "model": "gpt-test"},
     )
 
 
@@ -58,16 +57,15 @@ def test_llm_executor_can_call_model() -> None:
     assert response.content
 
 
-def test_executor_factory_always_selects_internal_executor() -> None:
-    executor = AgentExecutorFactory().resolve(_runtime_bundle())
+def test_internal_llm_executor_executes_provider_complete(monkeypatch) -> None:
+    executor = InternalLlmExecutor()
+    request = LlmRequest(system_prompt="system", context_prompt="context", messages=[LlmMessage(role="user", content="hello")])
 
-    assert isinstance(executor, InternalLlmExecutor)
+    monkeypatch.setattr(executor.provider, "complete", lambda req: SimpleNamespace(content="ok", tool_calls=[], raw={"model": req.model}))
 
+    response = executor.execute(_runtime_bundle(), request)
 
-def test_resolve_framework_adapter_selects_known_adapters() -> None:
-    assert isinstance(resolve_framework_adapter("claude"), ClaudeCodeAdapter)
-    assert isinstance(resolve_framework_adapter("opencode"), OpenCodeAdapter)
-    assert isinstance(resolve_framework_adapter("codex"), CodexCliAdapter)
+    assert response.content == "ok"
 
 
 def test_claude_adapter_build_prompt_includes_system_and_context() -> None:
@@ -93,7 +91,7 @@ def test_claude_adapter_uses_explicit_tool_options(monkeypatch) -> None:
     runtime = _runtime_bundle()
     captured = {}
 
-    monkeypatch.setattr("app.llm.framework_adapters.claude_code_adapter.os.name", "posix")
+    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
 
     command_args, _env = ClaudeCodeAdapter().build_command(
         runtime=runtime,
@@ -133,7 +131,7 @@ def test_opencode_adapter_builds_run_command_and_parses_event_stream(monkeypatch
         ]
     )
 
-    monkeypatch.setattr("app.llm.framework_adapters.opencode_adapter.os.name", "posix")
+    monkeypatch.setattr("app.tools.framework_adapters.opencode_adapter.os.name", "posix")
 
     command_args, _env = OpenCodeAdapter().build_command(
         runtime=runtime,
@@ -163,9 +161,9 @@ def test_opencode_adapter_builds_run_command_and_parses_event_stream(monkeypatch
 def test_opencode_adapter_prefers_cmd_entrypoint_on_windows(monkeypatch) -> None:
     runtime = _runtime_bundle()
 
-    monkeypatch.setattr("app.llm.framework_adapters.opencode_adapter.os.name", "nt")
+    monkeypatch.setattr("app.tools.framework_adapters.opencode_adapter.os.name", "nt")
     monkeypatch.setattr(
-        "app.llm.framework_adapters.opencode_adapter.shutil.which",
+        "app.tools.framework_adapters.opencode_adapter.shutil.which",
         lambda candidate: f"C:/tools/{candidate}" if candidate == "opencode.cmd" else None,
     )
 

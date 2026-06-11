@@ -7,7 +7,7 @@ from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.input_event_repository import InputEventRepository
 from app.repositories.plan_repository import PlanRepository
-from app.llm.llm_executor import AgentExecutorFactory
+from app.llm.llm_executor import InternalLlmExecutor
 from app.llm.llm_types import LlmMessage, LlmRequest
 from app.runtime.loop_engine import LoopEngine
 from app.runtime.prompt.prompt_composer import PromptComposer
@@ -32,7 +32,8 @@ class AgentRunInputService:
             agent_repository=agent_repository,
         )
         self.prompt_composer = PromptComposer()
-        self.executor_factory = AgentExecutorFactory()
+        self.executor = InternalLlmExecutor()
+        self.executor_factory = lambda runtime: self.executor
         self.loop_engine = LoopEngine(agent_run_repository)
 
     def input(self, run_id: UUID, payload: AgentRunInputRequest) -> AgentRunInputResponse:
@@ -51,7 +52,7 @@ class AgentRunInputService:
         runtime_bundle = self.runtime_assembler.build(run_id)
         self._prepare_run_status(runtime_bundle, input_event)
         runtime_bundle.prompt_view = self.prompt_composer.compose(runtime_bundle, input_event)
-        executor = self.executor_factory.resolve(runtime_bundle)
+        executor = self.executor_factory(runtime_bundle)
 
         try:
             initial_request = LlmRequest(
@@ -62,7 +63,7 @@ class AgentRunInputService:
                 ],
                 tools=list(runtime_bundle.tool_view.model_tools),
                 tool_choice=runtime_bundle.tool_view.tool_choice,
-                model=runtime_bundle.executor_policy.get("model", ""),
+                model=runtime_bundle.executor_config.get("model", ""),
             )
             llm_response = executor.execute(runtime_bundle, initial_request)
         except Exception as exc:
@@ -99,34 +100,13 @@ class AgentRunInputService:
             runtime_bundle.agent_run = updated_run
 
     def _is_framework_worker(self, runtime_bundle) -> bool:
-        return runtime_bundle.role == "worker" and not runtime_bundle.uses_internal_executor()
+        return False
 
     def _is_worker_run(self, runtime_bundle) -> bool:
         return runtime_bundle.role == "worker"
 
     def _persist_framework_result(self, runtime_bundle, *, status: str, response=None, error: str | None = None) -> None:
-        framework_execution = {
-            "framework": runtime_bundle.executor_policy.get("framework") or runtime_bundle.executor_policy.get("command"),
-            "workspace_root": runtime_bundle.workspace_root,
-            "status": status,
-        }
-        if response is not None:
-            framework_execution["content"] = response.content
-            framework_execution["raw"] = response.raw
-        if error is not None:
-            framework_execution["error"] = error
-
-        updated_run = runtime_bundle.agent_run.model_copy(
-            update={
-                "status": status,
-                "context_snapshot": {
-                    **runtime_bundle.agent_run.context_snapshot,
-                    "framework_execution": framework_execution,
-                },
-            }
-        )
-        self.agent_run_repository.update(updated_run)
-        runtime_bundle.agent_run = updated_run
+        raise RuntimeError("framework worker path has been removed")
 
     def _persist_internal_worker_result(self, runtime_bundle, response) -> None:
         execution = {

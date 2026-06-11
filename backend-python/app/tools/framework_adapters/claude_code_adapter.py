@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.llm.llm_types import LlmRequest, LlmResponse
@@ -12,8 +13,8 @@ if TYPE_CHECKING:
     from app.runtime.runtime_assembler import RuntimeBundle
 
 
-class CodexCliAdapter:
-    framework_name = "codex"
+class ClaudeCodeAdapter:
+    framework_name = "claude"
 
     def build_command(
         self,
@@ -22,12 +23,49 @@ class CodexCliAdapter:
         env: dict[str, str],
         options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
-        runtime_policy = getattr(runtime, "executor_policy", {}) or {}
-        merged_options = dict(options or {})
+        runtime_policy = getattr(runtime, "executor_config", {}) or {}
+        merged_options = dict(runtime_policy.get("framework_options") or {})
+        merged_options.update(options or {})
         command = str(merged_options.get("command") or runtime_policy.get("command") or runtime_policy.get("framework") or self.framework_name)
         prompt = self.build_prompt(runtime, request)
+        allowed_tools = ",".join(merged_options.get("allowed_tools") or ["Read", "Edit", "Bash", "Write"])
+        permission_mode = merged_options.get("permission_mode", runtime_policy.get("permission_mode"))
+        allow_dangerously_skip_permissions = bool(
+            merged_options.get(
+                "allow_dangerously_skip_permissions",
+                runtime_policy.get("allow_dangerously_skip_permissions", False),
+            )
+        )
+        dangerously_skip_permissions = bool(
+            merged_options.get("dangerously_skip_permissions", runtime_policy.get("dangerously_skip_permissions", False))
+        )
+
+        if self._should_use_powershell_wrapper(command):
+            env = dict(env)
+            env["CLAUDE_PROMPT"] = prompt
+            command_line = f"{command} -p $env:CLAUDE_PROMPT"
+            if allowed_tools:
+                command_line += f" --allowedTools {allowed_tools}"
+            if permission_mode:
+                command_line += f" --permission-mode {permission_mode}"
+            if allow_dangerously_skip_permissions:
+                command_line += " --allow-dangerously-skip-permissions"
+            if dangerously_skip_permissions:
+                command_line += " --dangerously-skip-permissions"
+            command_line += " --output-format json"
+            return ["powershell", "-NoProfile", "-Command", command_line], env
+
         resolved_command = self._resolve_command_path(command)
-        return [resolved_command, "-p", prompt, "--output-format", "json"], env
+        command_args = [resolved_command, "-p", prompt, "--output-format", "json"]
+        if allowed_tools:
+            command_args.extend(["--allowedTools", allowed_tools])
+        if permission_mode:
+            command_args.extend(["--permission-mode", str(permission_mode)])
+        if allow_dangerously_skip_permissions:
+            command_args.append("--allow-dangerously-skip-permissions")
+        if dangerously_skip_permissions:
+            command_args.append("--dangerously-skip-permissions")
+        return command_args, env
 
     def parse_response(self, completed: subprocess.CompletedProcess[str]) -> LlmResponse:
         stdout = (completed.stdout or "").strip()
@@ -52,6 +90,11 @@ class CodexCliAdapter:
             sections.append(f"[USER_MESSAGE]\n{user_messages}")
         sections.extend(section.strip() for section in (request.system_prompt, request.context_prompt) if section.strip())
         return "\n\n".join(sections) or f"Work inside the workspace root: {runtime.workspace_root}"
+
+    def _should_use_powershell_wrapper(self, command: str) -> bool:
+        if os.name != "nt":
+            return False
+        return Path(command).name.lower().startswith("claude")
 
     def _resolve_command_path(self, command: str) -> str:
         candidates = [command]

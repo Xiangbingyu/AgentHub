@@ -69,13 +69,13 @@ def _build_runtime_bundle(toolset: dict[str, object]) -> RuntimeBundle:
         workspace_root="E:/workspace",
         role="orchestrator",
         prompt_policy={"system_profile": "orchestrator"},
-        tool_policy={
-            "system_toolset": "orchestrator_default",
+        tool_config={
+            "tools": [{"name": name, "enabled": True, "options": {}} for name in toolset],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         tool_registry=registry,
     )
 

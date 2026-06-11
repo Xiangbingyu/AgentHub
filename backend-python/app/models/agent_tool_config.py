@@ -12,7 +12,6 @@ class AgentToolConfig(BaseModel):
         "code_tool",
         "bash_tool",
         "claude_code_tool",
-        "codex_tool",
         "opencode_tool",
         "question_tool",
     ]

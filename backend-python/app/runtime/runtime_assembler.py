@@ -10,9 +10,9 @@ from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
 from app.repositories.plan_repository import PlanRepository
 from app.runtime.instruction.instruction_resolver import InstructionResolver
-from app.runtime.policy.executor_policy_resolver import ExecutorPolicyResolver
+from app.runtime.policy.executor_config_resolver import ExecutorConfigResolver
 from app.runtime.policy.prompt_policy_resolver import PromptPolicyResolver
-from app.runtime.policy.tool_policy_resolver import ToolPolicyResolver
+from app.runtime.policy.tool_config_resolver import ToolConfigResolver
 from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolver
 from app.runtime.tools.tool_registry import ToolRegistry
 from app.runtime.tools.tool_resolver import ToolResolver
@@ -43,7 +43,7 @@ class RuntimeBundle:
     runtime_snapshot: dict[str, Any] = field(default_factory=dict)
 
     def uses_internal_executor(self) -> bool:
-        return self.executor_config.get("kind", "internal_llm") == "internal_llm"
+        return True
 
 
 class RuntimeAssembler:
@@ -55,20 +55,20 @@ class RuntimeAssembler:
         workspace_resolver: WorkspaceResolver | None = None,
         instruction_resolver: InstructionResolver | None = None,
         tool_resolver: ToolResolver | None = None,
-        executor_policy_resolver: ExecutorPolicyResolver | None = None,
+        executor_config_resolver: ExecutorConfigResolver | None = None,
         runtime_snapshot_resolver: RuntimeSnapshotResolver | None = None,
         prompt_policy_resolver: PromptPolicyResolver | None = None,
-        tool_policy_resolver: ToolPolicyResolver | None = None,
+        tool_config_resolver: ToolConfigResolver | None = None,
     ) -> None:
         self.agent_run_repository = agent_run_repository
         self.agent_repository = agent_repository
         self.workspace_resolver = workspace_resolver or WorkspaceResolver()
         self.instruction_resolver = instruction_resolver or InstructionResolver()
         self.tool_resolver = tool_resolver or ToolResolver(plan_repository)
-        self.executor_policy_resolver = executor_policy_resolver or ExecutorPolicyResolver()
+        self.executor_config_resolver = executor_config_resolver or ExecutorConfigResolver()
         self.runtime_snapshot_resolver = runtime_snapshot_resolver or RuntimeSnapshotResolver()
         self.prompt_policy_resolver = prompt_policy_resolver or PromptPolicyResolver()
-        self.tool_policy_resolver = tool_policy_resolver or ToolPolicyResolver()
+        self.tool_config_resolver = tool_config_resolver or ToolConfigResolver()
 
     def resolve(self, run_id: UUID) -> RuntimeContext:
         if self.agent_run_repository is None or self.agent_repository is None:
@@ -92,12 +92,12 @@ class RuntimeAssembler:
         runtime_snapshot = self.runtime_snapshot_resolver.resolve(agent_run, agent)
         workspace_root = self.workspace_resolver.resolve(runtime_snapshot)
         role = runtime_snapshot["role"]
-        executor_config = self.executor_policy_resolver.resolve(runtime_snapshot)
-        prompt_policy = self.prompt_policy_resolver.resolve(runtime_snapshot, executor_policy=executor_config)
-        tool_config = self.tool_policy_resolver.resolve(
+        executor_config = self.executor_config_resolver.resolve(runtime_snapshot)
+        prompt_policy = self.prompt_policy_resolver.resolve(runtime_snapshot, executor_config=executor_config)
+        tool_config = self.tool_config_resolver.resolve(
             runtime_snapshot,
             role=role,
-            executor_policy=executor_config,
+            executor_config=executor_config,
         )
 
         runtime_bundle = RuntimeBundle(

@@ -72,13 +72,13 @@ def test_plan_tool_writes_plan_inside_workspace(tmp_path: Path) -> None:
         workspace_root=str(tmp_path),
         role="orchestrator",
         prompt_policy={"system_profile": "orchestrator"},
-        tool_policy={
-            "system_toolset": "orchestrator_default",
+        tool_config={
+            "tools": [{"name": "plan_tool", "enabled": True, "options": {}}],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         tool_registry=ToolRegistry(),
         workspace_session=WorkspaceSession(str(tmp_path)),
     )

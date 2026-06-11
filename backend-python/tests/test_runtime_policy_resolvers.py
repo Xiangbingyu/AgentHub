@@ -2,9 +2,9 @@ from uuid import uuid4
 
 from app.models.agent import AgentModel
 from app.models.agent_run import AgentRunModel
-from app.runtime.policy.executor_policy_resolver import ExecutorPolicyResolver
+from app.runtime.policy.executor_config_resolver import ExecutorConfigResolver
 from app.runtime.policy.prompt_policy_resolver import PromptPolicyResolver
-from app.runtime.policy.tool_policy_resolver import ToolPolicyResolver
+from app.runtime.policy.tool_config_resolver import ToolConfigResolver
 from app.runtime.snapshot.runtime_snapshot_resolver import RuntimeSnapshotResolver
 
 
@@ -37,7 +37,7 @@ def test_runtime_snapshot_resolver_builds_defaults_from_agent() -> None:
     assert snapshot["role"] == "orchestrator"
     assert snapshot["prompt_policy"]["user_prompt"] == "custom"
     assert [item["name"] for item in snapshot["tool_config"]["tools"]] == ["plan_tool", "delegate_tool", "bash_tool"]
-    assert snapshot["executor_config"]["kind"] == "internal_llm"
+    assert snapshot["executor_config"]["provider"] == "openai_compatible"
     assert snapshot["executor_config"]["model"] == "gpt-test"
     assert "tool_policy" not in snapshot
     assert "executor_policy" not in snapshot
@@ -48,40 +48,35 @@ def test_executor_config_resolver_builds_internal_defaults() -> None:
         "role": "worker",
         "prompt_policy": {},
         "tool_config": {},
-        "executor_config": {"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
+        "executor_config": {"provider": "openai_compatible", "model": "gpt-test"},
     }
-    executor_policy = ExecutorPolicyResolver().resolve(runtime_snapshot)
+    executor_config = ExecutorConfigResolver().resolve(runtime_snapshot)
 
-    prompt_policy = PromptPolicyResolver().resolve(runtime_snapshot, executor_policy=executor_policy)
-    tool_policy = ToolPolicyResolver().resolve(
+    prompt_policy = PromptPolicyResolver().resolve(runtime_snapshot, executor_config=executor_config)
+    tool_config = ToolConfigResolver().resolve(
         runtime_snapshot,
         role="worker",
-        executor_policy=executor_policy,
+        executor_config=executor_config,
     )
 
     assert prompt_policy["system_profile"] == "worker"
-    assert executor_policy == {
-        "kind": "internal_llm",
+    assert executor_config == {
         "provider": "openai_compatible",
         "model": "gpt-test",
-        "framework": None,
-        "command": None,
-        "timeout_seconds": 300,
-        "framework_options": {},
     }
-    assert tool_policy["tools"] == []
-    assert tool_policy["model_tools_enabled"] is True
-    assert tool_policy["runtime_tools_enabled"] is True
+    assert tool_config["tools"] == []
+    assert tool_config["model_tools_enabled"] is True
+    assert tool_config["runtime_tools_enabled"] is True
 
 
-def test_tool_policy_resolver_uses_empty_tool_list_defaults() -> None:
-    tool_policy = ToolPolicyResolver().resolve(
+def test_tool_config_resolver_uses_empty_tool_list_defaults() -> None:
+    tool_config = ToolConfigResolver().resolve(
         {"tool_config": {}},
         role="worker",
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"provider": "openai_compatible", "model": "gpt-test"},
     )
 
-    assert tool_policy == {
+    assert tool_config == {
         "tools": [],
         "user_tools": [],
         "model_tools_enabled": True,
@@ -91,8 +86,8 @@ def test_tool_policy_resolver_uses_empty_tool_list_defaults() -> None:
     }
 
 
-def test_tool_policy_resolver_preserves_runtime_snapshot_tool_items() -> None:
-    tool_policy = ToolPolicyResolver().resolve(
+def test_tool_config_resolver_preserves_runtime_snapshot_tool_items() -> None:
+    tool_config = ToolConfigResolver().resolve(
         {
             "tool_config": {
                 "tools": [{"name": "code_tool", "enabled": True, "options": {}}],
@@ -105,11 +100,11 @@ def test_tool_policy_resolver_preserves_runtime_snapshot_tool_items() -> None:
             }
         },
         role="worker",
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"provider": "openai_compatible", "model": "gpt-test"},
     )
 
-    assert tool_policy["tools"] == [{"name": "code_tool", "enabled": True, "options": {}}]
-    assert tool_policy["command_policies"] == {
+    assert tool_config["tools"] == [{"name": "code_tool", "enabled": True, "options": {}}]
+    assert tool_config["command_policies"] == {
         "bash": {
             "*": "deny",
             "git status *": "allow",

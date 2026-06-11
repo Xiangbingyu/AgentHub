@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.llm.llm_types import LlmRequest, LlmResponse
@@ -24,7 +23,7 @@ class OpenCodeAdapter:
         env: dict[str, str],
         options: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str]]:
-        runtime_policy = getattr(runtime, "executor_policy", {}) or {}
+        runtime_policy = getattr(runtime, "executor_config", {}) or {}
         merged_options = dict(runtime_policy.get("framework_options") or {})
         merged_options.update(options or {})
         command = str(merged_options.get("command") or runtime_policy.get("command") or runtime_policy.get("framework") or self.framework_name)

@@ -25,13 +25,13 @@ def test_code_tool_writes_workspace_file(tmp_path: Path) -> None:
         workspace_root=str(tmp_path),
         role="worker",
         prompt_policy={"system_profile": "worker"},
-        tool_policy={
-            "system_toolset": "worker_default",
+        tool_config={
+            "tools": [{"name": "code_tool", "enabled": True, "options": {}}],
             "model_tools_enabled": True,
             "runtime_tools_enabled": True,
             "auto_tool_choice": True,
         },
-        executor_policy={"kind": "internal_llm"},
+        executor_config={"kind": "internal_llm", "provider": "openai_compatible", "model": "gpt-test"},
         tool_registry=ToolRegistry(),
         workspace_session=WorkspaceSession(str(tmp_path)),
     )

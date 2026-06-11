@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 from uuid import uuid4
 
 import pytest
@@ -8,7 +9,6 @@ import pytest
 from app.config import get_settings
 from app.database.bootstrap import bootstrap_memory_store
 from app.database.memory_store import STORE
-from app.llm.llm_executor import AgentExecutorFactory
 from app.models.agent import AgentModel
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.agent_run_repository import AgentRunRepository
@@ -21,6 +21,45 @@ from app.services.agent_run_input_service import AgentRunInputService
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _worker_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "code_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+
+
+def _orchestrator_tool_config() -> dict[str, object]:
+    return {
+        "tools": [
+            {"name": "plan_tool", "enabled": True, "options": {}},
+            {"name": "delegate_tool", "enabled": True, "options": {}},
+            {"name": "bash_tool", "enabled": True, "options": {}},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
+
+
+def _external_worker_tool_config(tool_name: str, *, command: str, timeout_seconds: int, options: dict[str, object] | None = None) -> dict[str, object]:
+    tool_options = {"command": command, "timeout_seconds": timeout_seconds}
+    if options:
+        tool_options.update(options)
+    return {
+        "tools": [
+            {"name": tool_name, "enabled": True, "options": tool_options},
+        ],
+        "model_tools_enabled": True,
+        "runtime_tools_enabled": True,
+        "auto_tool_choice": True,
+    }
 
 
 class RecordingExecutor:
@@ -47,6 +86,15 @@ class RecordingExecutor:
         return response
 
 
+class WrappedExecutor:
+    def __init__(self, *, delegate, trace: list[dict[str, object]]) -> None:
+        self.delegate = delegate
+        self.trace = trace
+
+    def execute(self, runtime, request):
+        return RecordingExecutor(delegate=self.delegate, trace=self.trace).execute(runtime, request)
+
+
 def _build_orchestrator_user_prompt(*, worker_agent_id: str, worker_target_path: str) -> str:
     return (
         "Run a real plan-delegate-callback flow using only the available runtime tools.\n"
@@ -55,6 +103,28 @@ def _build_orchestrator_user_prompt(*, worker_agent_id: str, worker_target_path:
         f"The delegated worker agent id must be `{worker_agent_id}` exactly.\n"
         f"The worker task is to create the Python file `{worker_target_path}` with non-empty example code.\n"
         "When delegating, explicitly instruct the worker to use code_tool for the file write and not to only describe the intended action.\n"
+        "After the worker_callback arrives, inspect the callback result and update the plan with plan_tool.\n"
+        "If the worker succeeded, mark the single step as completed and summarize the result.\n"
+        "Do not delegate again after the callback.\n"
+        "Do not invent completion without a worker callback."
+    )
+
+
+def _build_external_tool_orchestrator_user_prompt(
+    *, worker_agent_id: str, worker_target_path: str, tool_name: str, tool_prompt_fragment: str
+) -> str:
+    return (
+        "Run a real plan-delegate-callback flow using only the available runtime tools.\n"
+        "Do not claim success in plain text before the tools have done the work.\n"
+        "On the initial user_input turn, create a one-step plan with plan_tool and delegate the task with delegate_tool.\n"
+        f"The delegated worker agent id must be `{worker_agent_id}` exactly.\n"
+        f"The worker task is to create exactly one markdown file at `{worker_target_path}`.\n"
+        f"When delegating, explicitly instruct the worker to use `{tool_name}` and not to use code_tool or bash_tool as a substitute.\n"
+        f"The delegated worker prompt must include this exact instruction fragment: `{tool_prompt_fragment}`.\n"
+        "The delegated worker prompt must also say that the final artifact must exist at the exact target path before the worker finishes.\n"
+        "Do not accept a different filename, temporary file, or alternate path.\n"
+        "The delegated worker prompt must instruct the worker to verify the exact target path exists before reporting completion.\n"
+        "If verification would fail, the worker must not claim success.\n"
         "After the worker_callback arrives, inspect the callback result and update the plan with plan_tool.\n"
         "If the worker succeeded, mark the single step as completed and summarize the result.\n"
         "Do not delegate again after the callback.\n"
@@ -84,6 +154,7 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
             agent_id=uuid4(),
             agent_name="Internal Worker",
             agent_kind="worker",
+            tool_config=_worker_tool_config(),
         )
     )
     orchestrator_agent = agent_repository.create(
@@ -91,6 +162,7 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
             agent_id=uuid4(),
             agent_name="Internal Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
             prompt_policy={
                 "include_user_prompt": True,
                 "user_prompt": _build_orchestrator_user_prompt(
@@ -101,15 +173,6 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
         )
     )
 
-    trace: list[dict[str, object]] = []
-    original_resolve = AgentExecutorFactory.resolve
-
-    def recording_resolve(self, runtime):
-        return RecordingExecutor(delegate=original_resolve(self, runtime), trace=trace)
-
-    monkeypatch.setattr(AgentExecutorFactory, "resolve", recording_resolve)
-    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
-
     create_service = AgentRunCreateService(
         agent_repository=agent_repository,
         agent_run_repository=agent_run_repository,
@@ -119,6 +182,10 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
         agent_repository=agent_repository,
         input_event_repository=input_event_repository,
     )
+    trace: list[dict[str, object]] = []
+    input_service.executor_factory = lambda runtime: WrappedExecutor(delegate=input_service.executor, trace=trace)
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._build_run_input_service", lambda self: input_service)
 
     create_response = create_service.create_run(
         AgentRunCreateRequest(
@@ -158,7 +225,7 @@ def test_delegate_chain_e2e_internal_llm_uses_code_tool(monkeypatch) -> None:
     worker_entries = [entry for entry in trace if entry["role"] == "worker"]
     assert len(orchestrator_entries) >= 2, trace
     assert len(worker_entries) >= 1, trace
-    assert any(entry["response_tool_calls"] == ["code_tool"] for entry in worker_entries), trace
+    assert any("code_tool" in entry["response_tool_calls"] for entry in worker_entries), trace
 
     assert worker_output_path.exists(), {
         "trace": trace,
@@ -205,6 +272,7 @@ def test_orchestrator_e2e_internal_llm_uses_bash_tool_before_plan(monkeypatch) -
             agent_id=uuid4(),
             agent_name="Internal Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
             prompt_policy={
                 "include_user_prompt": True,
                 "user_prompt": (
@@ -216,14 +284,6 @@ def test_orchestrator_e2e_internal_llm_uses_bash_tool_before_plan(monkeypatch) -
         )
     )
 
-    trace: list[dict[str, object]] = []
-    original_resolve = AgentExecutorFactory.resolve
-
-    def recording_resolve(self, runtime):
-        return RecordingExecutor(delegate=original_resolve(self, runtime), trace=trace)
-
-    monkeypatch.setattr(AgentExecutorFactory, "resolve", recording_resolve)
-
     create_service = AgentRunCreateService(
         agent_repository=agent_repository,
         agent_run_repository=agent_run_repository,
@@ -233,6 +293,9 @@ def test_orchestrator_e2e_internal_llm_uses_bash_tool_before_plan(monkeypatch) -
         agent_repository=agent_repository,
         input_event_repository=input_event_repository,
     )
+    trace: list[dict[str, object]] = []
+    input_service.executor_factory = lambda runtime: WrappedExecutor(delegate=input_service.executor, trace=trace)
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._build_run_input_service", lambda self: input_service)
 
     create_response = create_service.create_run(
         AgentRunCreateRequest(agent_id=orchestrator_agent.agent_id, workspace_id=uuid4(), metadata={})
@@ -284,13 +347,19 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
     input_event_repository = InputEventRepository()
     plan_repository = PlanRepository()
     worker_agent = agent_repository.create(
-        AgentModel(agent_id=uuid4(), agent_name="Internal Worker", agent_kind="worker")
+        AgentModel(
+            agent_id=uuid4(),
+            agent_name="Internal Worker",
+            agent_kind="worker",
+            tool_config=_worker_tool_config(),
+        )
     )
     orchestrator_agent = agent_repository.create(
         AgentModel(
             agent_id=uuid4(),
             agent_name="Internal Orchestrator",
             agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
             prompt_policy={
                 "include_user_prompt": True,
                 "user_prompt": (
@@ -307,15 +376,6 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
         )
     )
 
-    trace: list[dict[str, object]] = []
-    original_resolve = AgentExecutorFactory.resolve
-
-    def recording_resolve(self, runtime):
-        return RecordingExecutor(delegate=original_resolve(self, runtime), trace=trace)
-
-    monkeypatch.setattr(AgentExecutorFactory, "resolve", recording_resolve)
-    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
-
     create_service = AgentRunCreateService(
         agent_repository=agent_repository,
         agent_run_repository=agent_run_repository,
@@ -325,6 +385,10 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
         agent_repository=agent_repository,
         input_event_repository=input_event_repository,
     )
+    trace: list[dict[str, object]] = []
+    input_service.executor_factory = lambda runtime: WrappedExecutor(delegate=input_service.executor, trace=trace)
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._build_run_input_service", lambda self: input_service)
 
     create_response = create_service.create_run(
         AgentRunCreateRequest(agent_id=orchestrator_agent.agent_id, workspace_id=uuid4(), metadata={})
@@ -368,6 +432,155 @@ def test_delegate_chain_e2e_internal_llm_uses_bash_tool_to_move_file(monkeypatch
     assert not source_path.exists()
     assert target_path.exists()
     assert target_path.read_text(encoding="utf-8").strip() == "test"
+
+    orchestrator_plan = plan_repository.get_by_run_id(create_response.run_id)
+    assert orchestrator_plan is not None
+    assert orchestrator_plan.status in {"completed", "in_progress"}
+    assert Path(orchestrator_plan.file_path).exists()
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "command", "tool_options", "output_file_name", "tool_prompt_fragment"),
+    [
+            (
+                "claude_code_tool",
+                "claude",
+                {
+                    "allowed_tools": ["Read", "Write", "Edit", "Bash"],
+                    "permission_mode": "bypassPermissions",
+                },
+                "plan-delegate-document-claude.md",
+                "Use claude_code_tool to create the target markdown file with non-empty markdown content.",
+            ),
+            (
+                "opencode_tool",
+                "opencode",
+                {
+                    "dangerously_skip_permissions": True,
+                },
+                "plan-delegate-document-opencode.md",
+                "Use opencode_tool to create the target markdown file with non-empty markdown content, then verify that exact path exists before you finish.",
+            ),
+        ],
+)
+def test_delegate_chain_e2e_internal_llm_uses_external_code_tool(
+    monkeypatch,
+    tool_name: str,
+    command: str,
+    tool_options: dict[str, object],
+    output_file_name: str,
+    tool_prompt_fragment: str,
+) -> None:
+    settings = get_settings()
+    if not settings.test_api_key or not settings.test_base_url or not settings.test_model:
+        pytest.skip("TEST_API_KEY / TEST_BASE_URL / TEST_MODEL are required for real internal LLM test")
+    if shutil.which(command) is None:
+        pytest.skip(f"{command} CLI is not installed")
+
+    worker_output_path = REPO_ROOT / ".AgentHub" / "tests" / output_file_name
+    worker_target_path = worker_output_path.as_posix()
+
+    bootstrap_memory_store()
+    worker_output_path.parent.mkdir(parents=True, exist_ok=True)
+    if worker_output_path.exists():
+        worker_output_path.unlink()
+
+    agent_repository = AgentRepository()
+    agent_run_repository = AgentRunRepository()
+    input_event_repository = InputEventRepository()
+    plan_repository = PlanRepository()
+    worker_agent = agent_repository.create(
+        AgentModel(
+            agent_id=uuid4(),
+            agent_name=f"{tool_name} Worker",
+            agent_kind="worker",
+            tool_config=_external_worker_tool_config(
+                tool_name,
+                command=command,
+                timeout_seconds=240,
+                options=tool_options,
+            ),
+        )
+    )
+    orchestrator_agent = agent_repository.create(
+        AgentModel(
+            agent_id=uuid4(),
+            agent_name="Internal Orchestrator",
+            agent_kind="orchestrator",
+            tool_config=_orchestrator_tool_config(),
+            prompt_policy={
+                "include_user_prompt": True,
+                "user_prompt": _build_external_tool_orchestrator_user_prompt(
+                    worker_agent_id=str(worker_agent.agent_id),
+                    worker_target_path=worker_target_path,
+                    tool_name=tool_name,
+                    tool_prompt_fragment=tool_prompt_fragment,
+                ),
+            },
+        )
+    )
+
+    create_service = AgentRunCreateService(
+        agent_repository=agent_repository,
+        agent_run_repository=agent_run_repository,
+    )
+    input_service = AgentRunInputService(
+        agent_run_repository=agent_run_repository,
+        agent_repository=agent_repository,
+        input_event_repository=input_event_repository,
+    )
+    trace: list[dict[str, object]] = []
+    input_service.executor_factory = lambda runtime: WrappedExecutor(delegate=input_service.executor, trace=trace)
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._run_async", lambda self, job: job())
+    monkeypatch.setattr("app.tools.delegate_tool.DelegateTool._build_run_input_service", lambda self: input_service)
+
+    create_response = create_service.create_run(
+        AgentRunCreateRequest(
+            agent_id=orchestrator_agent.agent_id,
+            workspace_id=uuid4(),
+            metadata={},
+        )
+    )
+
+    response = input_service.input(
+        run_id=create_response.run_id,
+        payload=AgentRunInputRequest(
+            input_id=uuid4(),
+            type="user_input",
+            payload={
+                "content": f"Create a plan, delegate to the provided worker, use {tool_name}, and complete the plan after the worker callback."
+            },
+            idempotency_key=str(uuid4()),
+        ),
+    )
+
+    orchestrator_run = agent_run_repository.get_by_id(create_response.run_id)
+    assert response.status == "accepted"
+    assert orchestrator_run is not None
+    assert orchestrator_run.status == "completed"
+
+    subtasks = list(STORE.subtasks.values())
+    assert len(subtasks) >= 1
+    assert any(subtask.status == "completed" for subtask in subtasks)
+
+    worker_runs = [
+        agent_run_repository.get_by_id(subtask.worker_run_id)
+        for subtask in subtasks
+    ]
+    worker_runs = [run for run in worker_runs if run is not None]
+    assert worker_runs
+    assert any(run.status == "completed" for run in worker_runs), [run.context_snapshot for run in worker_runs]
+
+    orchestrator_entries = [entry for entry in trace if entry["role"] == "orchestrator"]
+    worker_entries = [entry for entry in trace if entry["role"] == "worker"]
+    assert worker_entries, trace
+    assert any(tool_name in entry["visible_tools"] for entry in worker_entries), trace
+    assert any(tool_name in entry["response_tool_calls"] for entry in worker_entries), trace
+    assert any("delegate_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+    assert any("plan_tool" in entry["response_tool_calls"] for entry in orchestrator_entries), trace
+
+    assert worker_output_path.exists(), trace
+    assert worker_output_path.read_text(encoding="utf-8").strip()
 
     orchestrator_plan = plan_repository.get_by_run_id(create_response.run_id)
     assert orchestrator_plan is not None

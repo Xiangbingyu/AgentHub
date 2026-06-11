@@ -16,7 +16,7 @@ class BashTool:
     def run(self, *, runtime, arguments: BashToolRequest | dict, **_kwargs):
         request = arguments if isinstance(arguments, BashToolRequest) else BashToolRequest.model_validate(arguments)
         cwd = self._resolve_workdir(runtime.workspace_root, request.workdir)
-        self._check_policy(runtime.tool_policy, request.command)
+        self._check_policy(runtime.tool_config, request.command)
         timeout_ms = request.timeout or self.DEFAULT_TIMEOUT_MS
         command = self._build_command(request.command)
         try:
@@ -87,8 +87,8 @@ class BashTool:
             raise ValueError(f"workdir does not exist: {workdir}")
         return target
 
-    def _check_policy(self, tool_policy: dict, command: str) -> None:
-        rules = ((tool_policy or {}).get("command_policies") or {}).get("bash") or {"*": "allow"}
+    def _check_policy(self, tool_config: dict, command: str) -> None:
+        rules = ((tool_config or {}).get("command_policies") or {}).get("bash") or {"*": "allow"}
         for pattern in self._derive_patterns(command):
             action = self._resolve_rule_action(rules, pattern)
             if action == "deny":
