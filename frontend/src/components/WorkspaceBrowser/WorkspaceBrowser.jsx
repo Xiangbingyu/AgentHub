@@ -15,6 +15,7 @@ export default function WorkspaceBrowser({
   sourceWorkspaces,
   selectedResourceId,
   onSelectResource,
+  onExpandDirectory,
 }) {
   const [expandedKeys, setExpandedKeys] = useState(() => {
     const keys = new Set();
@@ -54,6 +55,9 @@ export default function WorkspaceBrowser({
             onClick={() => {
               if (isDirectory) {
                 toggleNode(nodeKey);
+                if (!isExpanded) {
+                  onExpandDirectory?.(node);
+                }
                 return;
               }
               onSelectResource(node.id);

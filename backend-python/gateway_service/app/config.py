@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "gateway_service"
     app_version: str = "0.1.0"
     agent_service_base_url: str = "http://localhost:8000"
+    cors_allow_origins: list[str] = ["http://localhost:5173"]
 
     model_config = SettingsConfigDict(
         env_file=".env",

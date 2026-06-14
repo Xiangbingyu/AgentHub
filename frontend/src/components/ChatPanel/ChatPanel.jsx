@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { Send, Smile, Paperclip, MoreHorizontal } from 'lucide-react';
 import './ChatPanel.css';
 
-export default function ChatPanel({ session, messages }) {
+export default function ChatPanel({ session, messages, onSendMessage, sending }) {
+  const [draft, setDraft] = useState('');
+
   if (!session) {
     return (
       <div className="chat-panel-empty">
@@ -9,6 +12,22 @@ export default function ChatPanel({ session, messages }) {
         <p>选择一个会话开始协作</p>
       </div>
     );
+  }
+
+  function handleSend() {
+    const content = draft.trim();
+    if (!content || sending) {
+      return;
+    }
+    onSendMessage?.(content);
+    setDraft('');
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
   }
 
   return (
@@ -55,11 +74,22 @@ export default function ChatPanel({ session, messages }) {
             <Paperclip size={20} />
           </button>
         </div>
-        <textarea className="chat-textarea" placeholder="发送消息..." />
+        <textarea
+          className="chat-textarea"
+          placeholder="发送消息..."
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleKeyDown}
+        />
         <div className="chat-input-actions">
-          <button type="button" className="send-btn" disabled>
+          <button
+            type="button"
+            className="send-btn"
+            onClick={handleSend}
+            disabled={sending || !draft.trim()}
+          >
             <Send size={16} />
-            发送
+            {sending ? '发送中' : '发送'}
           </button>
         </div>
       </div>

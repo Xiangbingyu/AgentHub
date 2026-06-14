@@ -15,6 +15,9 @@ class AgentRepository:
     def get_by_id(self, agent_id: UUID) -> AgentModel | None:
         return STORE.agents.get(agent_id)
 
+    def list_all(self) -> list[AgentModel]:
+        return list(STORE.agents.values())
+
     def update(self, agent: AgentModel) -> AgentModel:
         agent.updated_at = datetime.now(timezone.utc)
         STORE.agents[agent.agent_id] = agent

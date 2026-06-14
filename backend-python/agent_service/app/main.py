@@ -2,11 +2,14 @@ from fastapi import FastAPI
 
 from agent_service.app.api.agent_run_create import router as agent_run_create_router
 from agent_service.app.api.agent_run_input import router as agent_run_input_router
+from agent_service.app.api.agent_run_read import router as agent_run_read_router
 from agent_service.app.api.session import router as session_router
+from agent_service.app.api.session_read import router as session_read_router
 from agent_service.app.api.session_workspace import router as session_workspace_router
 from agent_service.app.api.source_workspace import router as source_workspace_router
-from agent_service.app.database.bootstrap import bootstrap_memory_store
+from agent_service.app.api.workspace_read import router as workspace_read_router
 from agent_service.app.config import get_settings
+from agent_service.app.database.bootstrap import bootstrap_memory_store
 
 
 def create_app() -> FastAPI:
@@ -33,9 +36,12 @@ def create_app() -> FastAPI:
 
     app.include_router(agent_run_create_router)
     app.include_router(agent_run_input_router)
+    app.include_router(agent_run_read_router)
     app.include_router(source_workspace_router)
     app.include_router(session_workspace_router)
     app.include_router(session_router)
+    app.include_router(session_read_router)
+    app.include_router(workspace_read_router)
 
     return app
 

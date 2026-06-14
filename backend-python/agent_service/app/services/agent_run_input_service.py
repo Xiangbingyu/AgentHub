@@ -15,6 +15,7 @@ from agent_service.app.runtime.loop_engine import LoopEngine
 from agent_service.app.runtime.prompt.prompt_composer import PromptComposer
 from agent_service.app.runtime.runtime_assembler import RuntimeAssembler
 from agent_service.app.schemas.agent_run_input import AgentRunInputRequest, AgentRunInputResponse
+from agent_service.app.services.domain_event_emitter import DomainEventEmitter
 
 
 class AgentRunInputService:
@@ -29,6 +30,7 @@ class AgentRunInputService:
         self.input_event_repository = input_event_repository
         self.plan_repository = PlanRepository()
         self.domain_event_repository = DomainEventRepository()
+        self.domain_event_emitter = DomainEventEmitter(self.domain_event_repository)
         self.runtime_assembler = RuntimeAssembler(
             plan_repository=self.plan_repository,
             agent_run_repository=agent_run_repository,
@@ -55,6 +57,7 @@ class AgentRunInputService:
         runtime_bundle = self.runtime_assembler.build(run_id)
         self._persist_domain_event(runtime_bundle, input_event)
         self._prepare_run_status(runtime_bundle, input_event)
+        self._emit_run_started(runtime_bundle)
         runtime_bundle.prompt_view = self.prompt_composer.compose(runtime_bundle, input_event)
         executor = self.executor_factory(runtime_bundle)
 
@@ -73,6 +76,7 @@ class AgentRunInputService:
         except Exception as exc:
             if self._is_worker_run(runtime_bundle):
                 self._persist_worker_failure(runtime_bundle, error=str(exc))
+            self._emit_run_completed(runtime_bundle, status="failed")
             raise
 
         if self._is_worker_run(runtime_bundle):
@@ -82,14 +86,18 @@ class AgentRunInputService:
                 if refreshed_run is not None:
                     runtime_bundle.agent_run = refreshed_run
             self._persist_worker_success(runtime_bundle, llm_response)
+            self._emit_agent_reply(runtime_bundle, llm_response)
+            self._emit_run_completed(runtime_bundle, status=runtime_bundle.agent_run.status)
             return AgentRunInputResponse(run_id=run_id, status="accepted")
 
         if runtime_bundle.tool_view.runtime_tools_enabled:
             llm_response = self._run_internal_orchestrator_tool_loop(runtime_bundle, executor, initial_request, llm_response)
+        self._emit_agent_reply(runtime_bundle, llm_response)
         loop_result = self.loop_engine.run(runtime_bundle, input_event)
 
         if loop_result.next_status is not None:
             self.agent_run_repository.update_status(run_id, loop_result.next_status)
+            self._emit_run_completed(runtime_bundle, status=loop_result.next_status)
 
         return AgentRunInputResponse(run_id=run_id, status="accepted")
 
@@ -112,6 +120,51 @@ class AgentRunInputService:
                 sequence_no=sequence_no,
                 payload={"content": self._build_user_message_content(input_event)},
             )
+        )
+
+    def _emit_run_started(self, runtime_bundle) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="run.started",
+            event_scope="main_timeline",
+            payload={
+                "run_id": str(runtime_bundle.agent_run.run_id),
+                "role": runtime_bundle.role,
+            },
+        )
+
+    def _emit_agent_reply(self, runtime_bundle, llm_response) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        content = getattr(llm_response, "content", None)
+        if not isinstance(content, str) or not content.strip():
+            return
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="session.message.appended",
+            event_scope="main_timeline",
+            payload={"role": "assistant", "content": content},
+        )
+
+    def _emit_run_completed(self, runtime_bundle, *, status: str) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="run.completed",
+            event_scope="main_timeline",
+            payload={"run_id": str(runtime_bundle.agent_run.run_id), "status": status},
         )
 
     def _prepare_run_status(self, runtime_bundle, input_event: InputEventModel) -> None:

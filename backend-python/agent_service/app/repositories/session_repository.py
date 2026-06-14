@@ -36,6 +36,12 @@ class SessionRepository:
         items = [SessionModel.model_validate_json(row[0]) for row in rows]
         return [item for item in items if item.session_workspace_id == session_workspace_id]
 
+    def list_all(self) -> list[SessionModel]:
+        conn = get_connection()
+        rows = conn.execute("SELECT payload FROM sessions").fetchall()
+        conn.close()
+        return [SessionModel.model_validate_json(row[0]) for row in rows]
+
     def update(self, session: SessionModel) -> SessionModel:
         session.updated_at = datetime.now(timezone.utc)
         return self.create(session)

@@ -27,6 +27,13 @@ class DomainEventRepository:
             key=lambda item: item.sequence_no,
         )
 
+    def list_by_session_id_since(self, session_id: UUID, since: int = 0) -> list[DomainEventModel]:
+        return [
+            item
+            for item in self.list_by_session_id(session_id)
+            if item.sequence_no > since
+        ]
+
     def next_sequence_no(self, session_id: UUID) -> int:
         items = self.list_by_session_id(session_id)
         if not items:

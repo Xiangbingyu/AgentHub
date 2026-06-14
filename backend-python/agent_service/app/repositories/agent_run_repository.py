@@ -29,6 +29,13 @@ class AgentRunRepository:
             return None
         return AgentRunModel.model_validate_json(row[0])
 
+    def list_by_session_id(self, session_id: UUID) -> list[AgentRunModel]:
+        conn = get_connection()
+        rows = conn.execute("SELECT payload FROM agent_runs").fetchall()
+        conn.close()
+        runs = [AgentRunModel.model_validate_json(row[0]) for row in rows]
+        return [run for run in runs if run.session_id == session_id]
+
     def update(self, agent_run: AgentRunModel) -> AgentRunModel:
         agent_run.updated_at = datetime.now(timezone.utc)
         return self.create(agent_run)

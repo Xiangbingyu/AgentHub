@@ -95,64 +95,17 @@
 - Modify: `agent_service/app/repositories/domain_event_repository.py`
 - Test: `agent_service/tests/test_subtask_repository_list_by_session.py`
 
-- [ ] **Step 1: 写失败测试 —— `SessionRepository.list_all` 与 `SubtaskRepository.list_by_session_id`、`DomainEventRepository.list_by_session_id_since`**
+- [x] **Step 1: 写失败测试 —— `SessionRepository.list_all` 与 `SubtaskRepository.list_by_session_id`、`DomainEventRepository.list_by_session_id_since`**
 
-```python
-from uuid import uuid4
+> 已核对：`SubtaskModel` 已含 `session_id: UUID | None` 字段，`list_by_session_id` 直接按字段过滤即可，无需经 run 关联。
+> 已核对：本仓库 repository 测试无 conftest / tmp_path，靠唯一 uuid 隔离 + 共享 db；测试沿用此约定（`get_settings` 是 `lru_cache`，monkeypatch env 不生效）。
+> 失败测试已写入 `test_subtask_repository_list_by_session.py`（新增）、`test_session_repository.py`、`test_domain_event_repository.py`（各追加一条）。
 
-from agent_service.app.database.bootstrap import bootstrap_database
-from agent_service.app.models.subtask import SubtaskModel
-from agent_service.app.repositories.subtask_repository import SubtaskRepository
+- [x] **Step 2: 运行确认失败** —— 确认为 `AttributeError: ... has no attribute 'list_by_session_id'`（方法不存在），符合预期。
 
+- [x] **Step 3: 实现三个方法** —— `SessionRepository.list_all`、`DomainEventRepository.list_by_session_id_since(session_id, since=0)`、`SubtaskRepository.list_by_session_id`。
 
-def test_list_by_session_id_returns_only_matching(tmp_path, monkeypatch):
-    monkeypatch.setenv("SQLITE_DB_PATH", str(tmp_path / "t.db"))
-    bootstrap_database()
-    repo = SubtaskRepository()
-    sid = uuid4()
-    # 构造两条 subtask，一条属于 sid，一条不属于（按 SubtaskModel 实际字段填充）
-    # 断言 repo.list_by_session_id(sid) 只返回属于 sid 的那条
-    ...
-```
-
-> 注意：`SubtaskModel` 是否已有 `session_id` 字段需先核对；若无，则 `list_by_session_id` 改为经 `parent_run_id → run.session_id` 关联，或在 emit 时记 `session_id`。先读模型再定方案。
-
-- [ ] **Step 2: 运行确认失败**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_subtask_repository_list_by_session.py -v
-```
-
-Expected: FAIL，提示方法不存在。
-
-- [ ] **Step 3: 实现三个方法**
-
-`SessionRepository.list_all`：
-
-```python
-def list_all(self) -> list[SessionModel]:
-    conn = get_connection()
-    rows = conn.execute("SELECT payload FROM sessions").fetchall()
-    conn.close()
-    return [SessionModel.model_validate_json(row[0]) for row in rows]
-```
-
-`DomainEventRepository.list_by_session_id_since`（复用现有排序逻辑，应用层过滤 `sequence_no > since`）：
-
-```python
-def list_by_session_id_since(self, session_id: UUID, since: int = 0) -> list[DomainEventModel]:
-    return [e for e in self.list_by_session_id(session_id) if e.sequence_no > since]
-```
-
-`SubtaskRepository.list_by_session_id`：按上一步核对结果实现（直接字段过滤或经 run 关联）。
-
-- [ ] **Step 4: 运行确认通过**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_subtask_repository_list_by_session.py -v
-```
-
-Expected: PASS。
+- [x] **Step 4: 运行确认通过** —— 7 passed；改动文件 `ruff check` 全绿。
 
 ### Task 2: workspace 文件树包装
 
@@ -160,47 +113,15 @@ Expected: PASS。
 - Create: `agent_service/app/runtime/workspace/workspace_tree.py`
 - Test: `agent_service/tests/test_workspace_tree.py`
 
-- [ ] **Step 1: 写失败测试 —— 给定 `root_path` 与相对 `path`，返回该层 `{type, name, path}` 列表，并验证越界路径被拒**
+- [x] **Step 1: 写失败测试 —— 给定 `root_path` 与相对 `path`，返回该层 `{type, name, path}` 列表，并验证越界路径被拒**
 
-```python
-from pathlib import Path
+> 已写入 `test_workspace_tree.py`：根层列举、子目录列举（验证 `path` 为 `src/a.py`）、越界 `../..` 抛 `ValueError`。
 
-from agent_service.app.runtime.workspace.workspace_tree import list_tree_level
+- [x] **Step 2: 运行确认失败** —— `ModuleNotFoundError: ...workspace_tree`，符合预期。
 
+- [x] **Step 3: 实现 `list_tree_level`** —— 复用 `WorkspaceSession.resolve_path` 越界保护 + `workspace_root`，单层列举，每项 `{type, name, path(POSIX 相对路径)}`。
 
-def test_list_tree_level_returns_entries(tmp_path: Path) -> None:
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.py").write_text("x")
-    (tmp_path / "readme.md").write_text("y")
-
-    entries = list_tree_level(str(tmp_path), ".")
-    names = {e["name"]: e["type"] for e in entries}
-
-    assert names["src"] == "directory"
-    assert names["readme.md"] == "file"
-
-
-def test_list_tree_level_rejects_escape(tmp_path: Path) -> None:
-    import pytest
-    with pytest.raises(ValueError):
-        list_tree_level(str(tmp_path), "../..")
-```
-
-- [ ] **Step 2: 运行确认失败**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_workspace_tree.py -v
-```
-
-- [ ] **Step 3: 实现 `list_tree_level`**
-
-复用 `WorkspaceSession.resolve_path` 的越界保护（或等价 `Path.resolve()` + 前缀校验），列出单层目录项，每项形如 `{"type": "directory"|"file", "name": str, "path": str}`（`path` 为相对 `root_path` 的 POSIX 路径）。前端 WorkspaceBrowser 按需逐层展开，单层返回即可。
-
-- [ ] **Step 4: 运行确认通过**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_workspace_tree.py -v
-```
+- [x] **Step 4: 运行确认通过** —— 3 passed；ruff 全绿。
 
 ### Task 3: DomainEventEmitter 与执行链路事件补齐（关键）
 
@@ -209,77 +130,23 @@ def test_list_tree_level_rejects_escape(tmp_path: Path) -> None:
 - Modify: `agent_service/app/services/agent_run_input_service.py`
 - Test: `agent_service/tests/test_domain_event_emitter.py`
 
-- [ ] **Step 1: 写失败测试 —— emitter 自动计算 `sequence_no` 并落事件**
+- [x] **Step 1: 写失败测试 —— emitter 自动计算 `sequence_no` 并落事件**
 
-```python
-from uuid import uuid4
+> 已写入 `test_domain_event_emitter.py`：连续 emit 两条，断言 sequence_no 为 [1,2]、首条 `run.started`、次条 payload `status` 为 completed。setup 用 `bootstrap_memory_store()` 建表。
 
-from agent_service.app.database.bootstrap import bootstrap_database
-from agent_service.app.repositories.domain_event_repository import DomainEventRepository
-from agent_service.app.services.domain_event_emitter import DomainEventEmitter
+- [x] **Step 2: 运行确认失败** —— `ModuleNotFoundError: ...domain_event_emitter`，符合预期。
 
+- [x] **Step 3: 实现 `DomainEventEmitter`** —— 包装 `next_sequence_no` + `create`，集中分配 `event_id`/`sequence_no`，支持 `run_id`/`subtask_id` 可选。
 
-def test_emit_assigns_monotonic_sequence(tmp_path, monkeypatch):
-    monkeypatch.setenv("SQLITE_DB_PATH", str(tmp_path / "t.db"))
-    bootstrap_database()
-    sid, swid = uuid4(), uuid4()
-    emitter = DomainEventEmitter()
+- [x] **Step 4: 在 `AgentRunInputService.input` 接入 emit 点** —— 已读 `agent_run_input_service.py` 定位三点：
+>   - `run.started`：`_prepare_run_status` 之后、LLM 执行前
+>   - `session.message.appended`（agent 回复，`role: assistant`）：worker 路径 `_persist_worker_success` 后；orchestrator 路径 tool loop 之后
+>   - `run.completed`：worker 终态、orchestrator `loop_result.next_status`、以及 LLM 异常路径（status="failed"）
+>   - 用 `getattr(llm_response, "content")` 取回复，空内容跳过；`session_id is None` 时全部跳过。
+>   - 构造函数引入 `DomainEventEmitter(self.domain_event_repository)`。
+>   - 新增 `test_agent_run_input_emits_run_lifecycle_events` 验证 run.started / agent 回复 / run.completed 三类事件齐全且 sequence_no 单调。
 
-    emitter.emit(session_id=sid, session_workspace_id=swid,
-                 event_type="run.started", event_scope="main_timeline",
-                 payload={"run_id": "r1"})
-    emitter.emit(session_id=sid, session_workspace_id=swid,
-                 event_type="run.completed", event_scope="main_timeline",
-                 payload={"run_id": "r1", "status": "completed"})
-
-    events = DomainEventRepository().list_by_session_id(sid)
-    assert [e.sequence_no for e in events] == [1, 2]
-    assert events[0].event_type == "run.started"
-```
-
-- [ ] **Step 2: 运行确认失败**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_domain_event_emitter.py -v
-```
-
-- [ ] **Step 3: 实现 `DomainEventEmitter`**
-
-包装 `next_sequence_no` + `DomainEventRepository.create`，集中处理 `event_id`（`uuid4`）、`sequence_no` 分配，避免散落：
-
-```python
-class DomainEventEmitter:
-    def __init__(self, repo: DomainEventRepository | None = None) -> None:
-        self._repo = repo or DomainEventRepository()
-
-    def emit(self, *, session_id, session_workspace_id, event_type, event_scope,
-             payload, run_id=None, subtask_id=None) -> DomainEventModel:
-        seq = self._repo.next_sequence_no(session_id)
-        event = DomainEventModel(
-            event_id=uuid4(), session_id=session_id,
-            session_workspace_id=session_workspace_id, run_id=run_id,
-            subtask_id=subtask_id, event_type=event_type, event_scope=event_scope,
-            payload=payload, sequence_no=seq,
-        )
-        return self._repo.create(event)
-```
-
-- [ ] **Step 4: 在 `AgentRunInputService.input` 接入 emit 点**
-
-先读 `agent_run_input_service.py` 定位执行前/LLM 返回后/终态三个位置，补：
-- `run.started`（`main_timeline`，进入执行前，payload 含 `run_id`、`agent_kind`）
-- `session.message.appended`（`main_timeline`，agent LLM 回复后，payload 含 `content`、`role: "assistant"`）
-- `run.completed`（`main_timeline`，run 终态时，payload 含 `run_id`、`status`）
-
-> `subtask.delegated` / `subtask.completed` / `plan.updated` / `workspace.changed` 列入设计但本轮非必须；若 emit 点改动小可一并补，否则留待下一轮，不阻塞端到端链路。先保证 agent 回复可见。
-
-- [ ] **Step 5: 跑现有相关测试确认未回归**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_domain_event_emitter.py agent_service/tests/test_agent_run_input.py -v
-```
-
-Expected: PASS（input 测试若断言事件数量需同步更新）。
+- [x] **Step 5: 跑现有相关测试确认未回归** —— 全量 agent_service `106 passed`；新增代码 ruff 干净（`agent_run_input_service.py` 既有 8 处 E501 与本次改动无关，未触碰）。
 
 ### Task 4: agent_service 读 API router
 
@@ -292,7 +159,7 @@ Expected: PASS（input 测试若断言事件数量需同步更新）。
 - Test: `agent_service/tests/test_workspace_read_api.py`
 - Test: `agent_service/tests/test_agent_run_read_api.py`
 
-- [ ] **Step 1: 写失败测试 —— 用 `TestClient` 覆盖核心读接口**
+- [x] **Step 1: 写失败测试 —— 用 `TestClient` 覆盖核心读接口**
 
 至少覆盖：
 - `GET /sessions` → 200，返回列表
@@ -303,36 +170,13 @@ Expected: PASS（input 测试若断言事件数量需同步更新）。
 - `GET /source-workspaces/{id}/tree?path=` → 文件树层
 - `GET /agent-runs/{id}` → 状态/snapshot/plan
 
-```python
-from fastapi.testclient import TestClient
+> 已写入 `test_session_read_api.py`（4 例）、`test_workspace_read_api.py`（3 例）、`test_agent_run_read_api.py`（1 例）。
 
-from agent_service.app.main import app
+- [x] **Step 2: 运行确认失败** —— 8 failed（路由不存在，返回 404），符合预期。
 
+- [x] **Step 3: 实现三个 router 并在 `main.py` 挂载** —— `session_read.py`（同 `/sessions` prefix 加 GET，与既有 POST router 共存）、`workspace_read.py`（source/session-workspace 列表/详情/tree，tree 从 `root_path` 解析并复用 `list_tree_level`，越界返回 400，缺失返回 404）、`agent_run_read.py`（`GET /agent-runs/{id}`，404）。`events` 接口 `since` 为 query 缺省 0 且 `ge=0`。
 
-def test_get_session_events_since_filters(tmp_path, monkeypatch):
-    monkeypatch.setenv("SQLITE_DB_PATH", str(tmp_path / "t.db"))
-    # bootstrap + 造 session + 造若干 domain_event
-    client = TestClient(app)
-    resp = client.get(f"/sessions/{sid}/events", params={"since": 1})
-    assert resp.status_code == 200
-    assert all(e["sequence_no"] > 1 for e in resp.json())
-```
-
-- [ ] **Step 2: 运行确认失败**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_session_read_api.py agent_service/tests/test_workspace_read_api.py agent_service/tests/test_agent_run_read_api.py -v
-```
-
-- [ ] **Step 3: 实现三个 router 并在 `main.py` 挂载**
-
-各 router 直接调 Task 1 的 repository 方法与 Task 2 的 `list_tree_level`；`events` 接口用 `list_by_session_id_since(session_id, since)`，`since` 为 query 参数缺省 0；tree 接口从 `source_workspace.root_path` 解析根目录再调 `list_tree_level`。返回体用现有 schema 或直接 `model_dump()`。
-
-- [ ] **Step 4: 运行确认通过**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest agent_service/tests/test_session_read_api.py agent_service/tests/test_workspace_read_api.py agent_service/tests/test_agent_run_read_api.py -v
-```
+- [x] **Step 4: 运行确认通过** —— 8 passed；既有写路由（session/agent-run POST）未回归；新增文件 ruff 全绿（auto-fix import 排序 + 手修一处 E501）。
 
 ### Task 5: gateway AgentServiceClient 接真实 httpx
 
@@ -340,35 +184,17 @@ def test_get_session_events_since_filters(tmp_path, monkeypatch):
 - Modify: `gateway_service/app/client/agent_service_client.py`
 - Test: `gateway_service/tests/test_agent_service_client.py`
 
-- [ ] **Step 1: 写失败测试 —— 用 mock transport / `respx` 或 monkeypatch httpx 验证 URL 与 since 透传**
+- [x] **Step 1: 写失败测试 —— 用 mock transport / `respx` 或 monkeypatch httpx 验证 URL 与 since 透传**
 
-```python
-def test_list_session_events_calls_correct_url(monkeypatch):
-    captured = {}
-    # monkeypatch httpx.Client.get 捕获 url/params，返回假响应
-    client = AgentServiceClient(base_url="http://x:8000")
-    client.list_session_events("sid", since=3)
-    assert captured["url"].endswith("/sessions/sid/events")
-    assert captured["params"]["since"] == 3
-```
+> 已写入 `test_agent_service_client.py`：monkeypatch `AgentServiceClient._client` 工厂为 `_FakeClient`，捕获 method/url/params/json。覆盖 `list_session_events`(since 透传)、`get_workspace_tree`(path 透传)、`post_message`(写代理 body 透传)、默认 base_url 来自 settings。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败** —— `AttributeError: ...has no attribute 'base_url'`，符合预期。
 
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/test_agent_service_client.py -v
-```
+- [x] **Step 3: 实现真实 httpx client** —— 构造可注入 `base_url`/`timeout`；`_client()` 工厂返回 `httpx.Client(base_url=, timeout=)`，`_get`/`_post` 统一 `raise_for_status`。读方法：events/sessions/session/subtasks/source-workspaces/session-workspaces/tree/agent-run；写代理：post_message/create_session/delete_session/create_source_workspace/create_session_workspace/create_agent_run。
+>   - **签名变更**：`list_session_events(session_id, since=0)`（原 `after_sequence_no`）。旧 stream 仍以无参调用，默认 0 不破坏；Task 6 重写 stream 时显式传 since。
+>   - **依赖调整**：`httpx` 从 dev group 提升到主 `dependencies`（运行时需要），`uv sync` 通过。
 
-- [ ] **Step 3: 实现真实 httpx client**
-
-从 `get_settings().agent_service_base_url` 取 base（构造可注入 `base_url` 便于测试）。方法：`list_session_events(session_id, since)`、`get_session`/`list_sessions`、`get_source_workspace`/`list_source_workspaces`、`list_session_workspaces`/`get_session_workspace`、`get_workspace_tree(source_id, path)`、`get_agent_run`、`list_subtasks`，写代理 `create_session`/`post_message`/`create_source_workspace`/`create_session_workspace`/`delete_session`。统一 `httpx.Client(base_url=..., timeout=...)`，对非 2xx 抛出。
-
-> **注意**：`list_session_events` 原桩参数名为 `after_sequence_no`，新接口用 `since`；统一改为 `since` 并同步更新 `session_stream.py` 调用处。
-
-- [ ] **Step 4: 运行确认通过**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/test_agent_service_client.py -v
-```
+- [x] **Step 4: 运行确认通过** —— client 4 例 + 旧 stream/app 测试共 7 passed；ruff 全绿。
 
 ### Task 6: gateway SSE 轮询流（修正序列化 + Last-Event-ID + 自适应间隔）
 
@@ -376,63 +202,15 @@ def test_list_session_events_calls_correct_url(monkeypatch):
 - Modify: `gateway_service/app/api/session_stream.py`
 - Test: `gateway_service/tests/test_session_stream.py`
 
-- [ ] **Step 1: 写失败测试 —— 验证 SSE 帧用 JSON 序列化、`id:` 为 sequence_no、读取 `Last-Event-ID`**
+- [x] **Step 1: 写失败测试 —— 验证 SSE 帧用 JSON 序列化、`id:` 为 sequence_no、读取 `Last-Event-ID`**
 
-```python
-def test_stream_emits_json_data_and_seq_id(monkeypatch):
-    # mock AgentServiceClient.list_session_events 返回一条事件后置空
-    # 用 TestClient stream，断言 data: 行是合法 JSON、id: 行是 sequence_no
-    ...
-```
+> 已重写 `test_session_stream.py`：`_fast_polling` 把 `STREAM_ACTIVE_INTERVAL`/`STREAM_IDLE_INTERVAL` 置 0、`STREAM_MAX_IDLE_POLLS` 置 2 保证快速确定终止。验证 `data:` 为合法 JSON（含中文 `ensure_ascii=False` 不乱码）、`id: 5`、`event:` 类型；以及 `Last-Event-ID: 7` → client 收到 `since=7`。
 
-> 轮询循环需可终止：测试里让 client 返回一批后即空，并对循环加最大轮次或注入「连接断开」信号，避免测试挂死。实现用 `asyncio.sleep` 让出，捕获 `asyncio.CancelledError` 退出。
+- [x] **Step 2: 运行确认失败** —— `AttributeError: ...STREAM_ACTIVE_INTERVAL`，符合预期。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 3: 改为轮询型异步生成器** —— `last_seq` 从 `last-event-id` 头解析（缺省 0）；`json.dumps(payload, ensure_ascii=False)` 修正原 f-string repr；`id:` 用 `sequence_no`；自适应间隔（有事件 0.3s、空轮 2.0s）；`request.is_disconnected()` 断开即退出；`STREAM_MAX_IDLE_POLLS` 上限收尾避免无限挂起（浏览器自动重连续传）；捕获 `asyncio.CancelledError`。
 
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/test_session_stream.py -v
-```
-
-- [ ] **Step 3: 改为轮询型异步生成器**
-
-```python
-@router.get("/{session_id}/stream")
-async def session_stream(session_id: str, request: Request):
-    client = AgentServiceClient()
-    last_seq = int(request.headers.get("last-event-id", 0) or 0)
-
-    async def iterator():
-        idle = 0
-        try:
-            while not await request.is_disconnected():
-                events = client.list_session_events(session_id, since=last_seq)
-                if events:
-                    idle = 0
-                    for e in events:
-                        nonlocal_seq = e["sequence_no"]
-                        yield (
-                            f"id: {nonlocal_seq}\n"
-                            f"event: {e['event_type']}\n"
-                            f"data: {json.dumps(e['payload'], ensure_ascii=False)}\n\n"
-                        )
-                    # 更新 last_seq 到最后一条
-                else:
-                    idle += 1
-                interval = 0.3 if events else min(2.0, 0.3 * (idle + 1))
-                await asyncio.sleep(interval)
-        except asyncio.CancelledError:
-            return
-
-    return StreamingResponse(iterator(), media_type="text/event-stream")
-```
-
-关键点：`data:` 用 `json.dumps`（修正原 f-string repr）；`id:` 用 `sequence_no` 支撑 `Last-Event-ID` 续传；自适应间隔（有新事件 300ms，连续空轮退避到 2s）；`last_seq` 闭包变量随每条事件推进。
-
-- [ ] **Step 4: 运行确认通过**
-
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/test_session_stream.py -v
-```
+- [x] **Step 4: 运行确认通过** —— 全量 gateway `8 passed`；ruff 全绿。
 
 ### Task 7: gateway 页面聚合 + 写代理 + CORS
 
@@ -443,79 +221,80 @@ async def session_stream(session_id: str, request: Request):
 - Modify: `gateway_service/app/main.py`
 - Test: `gateway_service/tests/test_session_page.py`、`test_workspace_page.py`、`test_write_proxy.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 - `GET /session-page/{id}`：返回 session 详情 + 历史事件按 `event_scope` 投影成 `main_timeline`/`subtask_thread`/`workspace_panel` 三块 + 绑定 session_workspace 快照
 - `GET /workspace-page/{id}`：返回 source 详情 + session_workspaces + tree 根层
 - `POST /sessions/{id}/messages`：透传到 agent_service 并回传结果（mock client 验证转发）
 
-- [ ] **Step 2: 运行确认失败**
+> 已写入 `test_page_aggregation.py`（session-page 三块投影 + workspace-page 聚合）、`test_write_proxy.py`（post_message 透传 `/agent-runs/{id}/input`、create_session 透传、CORS 预检头）。
+> 注：写消息接口按 agent_service 实际为 `POST /agent-runs/{run_id}/input`（非 `/sessions/{id}/messages`），write_proxy 透传到此。
 
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/test_session_page.py gateway_service/tests/test_workspace_page.py gateway_service/tests/test_write_proxy.py -v
-```
+- [x] **Step 2: 运行确认失败** —— 5 failed（page 投影缺失 / 写代理路由 404 / 无 CORS），符合预期。
 
-- [ ] **Step 3: 实现聚合 + 写代理 + CORS**
+- [x] **Step 3: 实现聚合 + 写代理 + CORS**
 
-- `session_page` / `workspace_page` 调 client 拉数据，按设计的投影表（`event_scope → 前端块`）做形状转换，不含编排语义。
-- `write_proxy.py`：`POST /sessions`、`POST /sessions/{id}/messages`、`POST /source-workspaces`、`POST /session-workspaces`、`POST /sessions/{id}/delete` 透传到对应 agent_service 接口。
-- `main.py` 挂载 `write_proxy` router，并加 `CORSMiddleware`，允许来源 `http://localhost:5173`（dev）。
+- `session_page`：调 `get_session` + `list_session_events` 按 `event_scope` 投影到三块，再按 `session_workspace_id` 拉快照。
+- `workspace_page`：调 `get_source_workspace` + `list_session_workspaces` + `get_workspace_tree(path=".")`。
+- `write_proxy.py`：`POST /agent-runs/{id}/input`、`/agent-runs`、`/sessions`、`/sessions/{id}/delete`、`/source-workspaces`、`/session-workspaces` 透传。
+- `main.py` 挂载 `write_proxy` 并加 `CORSMiddleware`；新增 `cors_allow_origins` 配置（缺省 `http://localhost:5173`）。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过** —— 全量 gateway `13 passed`；ruff 全绿。
 
-```powershell
-& "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest gateway_service/tests/ -v
-```
+### Task 7.5: 后端补 session 发消息接口（实现中追加）
+
+> **背景**：原 spec 写消息为 `POST /sessions/{id}/messages`，但 agent_service 输入接口实为 `POST /agent-runs/{run_id}/input`（按 run）。前端只持有 `session_id`，经用户确认采用「后端补 session 发消息接口」方案：内部解析/创建该 session 的活动 orchestrator run 再转 input。
+
+- [x] **Step 1: repository 补方法 + service TDD** —— `AgentRunRepository.list_by_session_id`、`AgentRepository.list_all`；`SessionMessageService(input_service 可注入)` 解析活动 orchestrator run（无则用 `AgentRunCreateService` 新建，workspace_id 取 `session.session_workspace_id`）再转 `input`。`test_session_message_service.py` 4 例（新建 run / 复用 run / 未知 session 抛错 / orchestrator 已 seed）。
+- [x] **Step 2: agent_service API** —— `POST /sessions/{session_id}/messages`（body `{content}`），未知 session 返回 404。`test_session_message_api.py` 2 例，monkeypatch `_resolve_input_service` 避免打真实 LLM。
+- [x] **Step 3: gateway 透传** —— `AgentServiceClient.post_session_message` + write_proxy `POST /sessions/{id}/messages`。`test_write_proxy.py` 追加 1 例。
+- [x] **Step 4: 验证** —— agent_service 消息相关 7 passed、gateway 14 passed；ruff 全绿。前端发消息调 gateway `POST /sessions/{id}/messages`，只需 session_id。
 
 ### Task 8: 前端接入真实接口与 SSE
 
 **Files:**
 - Create: `frontend/src/utils/api.js`
 - Create: `frontend/src/hooks/useSessionStream.js`
+- Modify: `frontend/vite.config.js`（新增 `/api` → gateway:8080 代理）
 - Modify: `frontend/src/pages/Chat/Chat.jsx`
 - Modify: `frontend/src/pages/Workspace/Workspace.jsx`
-- Modify: `frontend/src/data/mockChat.js` / `mockWorkspace.js`
+- Modify: `frontend/src/components/ChatPanel/ChatPanel.jsx`（启用发送 + 受控输入）
+- Modify: `frontend/src/components/WorkspaceBrowser/WorkspaceBrowser.jsx`（`onExpandDirectory` 懒加载回调）
+- Delete: `frontend/src/data/mockChat.js` / `mockWorkspace.js`（已被真实接口取代）
+- 追加: gateway `read_proxy.py`（`GET /sessions`、`/source-workspaces`、`/source-workspaces/{id}/tree`），让前端只跟 gateway 对话。
 
-- [ ] **Step 1: `utils/api.js`** —— `fetchJson` 封装，base URL 指向 gateway（`http://localhost:8080`，建议走 Vite proxy 或 env 变量），统一错误处理。
+- [x] **Step 1: `utils/api.js`** —— `fetchJson` 封装，统一走同源 `/api`（Vite 代理到 gateway:8080）；导出 listSessions/getSessionPage/listSourceWorkspaces/getWorkspacePage/getWorkspaceTree/postSessionMessage/createSession/sessionStreamUrl。
 
-- [ ] **Step 2: `hooks/useSessionStream.js`** —— 封装 `EventSource('/api/sessions/{id}/stream')`：按 `event:` 类型分发到 `main_timeline`/`subtask_thread`/`workspace_panel` 回调；按 `sequence_no` 去重与排序；切换 session 时关旧开新；依赖浏览器原生 `Last-Event-ID` 重连。
+- [x] **Step 2: `hooks/useSessionStream.js`** —— 封装 `EventSource`，监听已知 event 类型；切换 sessionId 关旧开新；解析 `data:` JSON、`lastEventId` 作 sequence_no；依赖浏览器原生 `Last-Event-ID` 重连。
 
-- [ ] **Step 3: Chat 页接入** —— 选中 session：`GET /session-page/{id}` 拉历史 + 开 `useSessionStream`；发消息：`POST /api/sessions/{id}/messages`，agent 回复经 SSE 回流追加。
+- [x] **Step 3: Chat 页接入** —— 启动拉 `listSessions`；选中 session 拉 `getSessionPage` 取历史（过滤 `session.message.appended` 投影成消息）+ 开 `useSessionStream`；发消息 `postSessionMessage`（只需 session_id），用户消息与 agent 回复均经 SSE 回流、按 `sequence_no` 去重排序追加；RuntimePanel 由 session + workspace 快照派生。
 
-- [ ] **Step 4: Workspace 页接入** —— `GET /workspace-page/{id}` 一次加载，文件树按需调 `tree` 接口逐层展开；RuntimePanel 消费 `workspace_panel` / run 状态事件。
+- [x] **Step 4: Workspace 页接入** —— 启动拉 `listSourceWorkspaces`，逐 source 拉 `getWorkspacePage` 取根层 tree + session_workspaces；目录展开经 `onExpandDirectory` 调 `getWorkspaceTree(path)` 懒加载并不可变注入 children；选中节点构造最小详情。
 
-- [ ] **Step 5: 前端构建校验**
-
-```bash
-cd frontend && npm run build && npm run lint
-```
-
-Expected: 构建通过、lint 无错（注意 React 19 JSX transform 不需 `import React`，避免未用导入报错）。
+- [x] **Step 5: 前端构建校验** —— `npm run build` 通过；`npm run lint` 0 error（修了 no-useless-assignment ×2、set-state-in-effect ×1：空 session 早返回不再同步 setState）。
 
 ### Task 9: 端到端验证与单次总提交
 
-- [ ] **Step 1: 全量后端测试**
+- [x] **Step 1: 全量后端测试**
 
 ```powershell
 & "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m pytest
 & "E:\Github\AgentHub-weon\backend-python\.venv\Scripts\python.exe" -m ruff check .
 ```
 
-- [ ] **Step 2: 手动端到端冒烟**
+实测：`pytest` **137 passed**（含真实 LLM e2e，约 6m45s）。`ruff check .` 全库 234 个预存错误（E501/I001/F401，遍布未改文件）；仅对本轮改/新建文件单测，经 `git stash` 比对确认 `agent_run_input_service.py`/`test_agent_run_input.py` 的 7×E501 + 2×I001 **改动前即存在**，本轮**零新增**违规，符合最小改动纪律。
 
-分别起 agent_service(:8000)、gateway_service(:8080)、前端(:5173)：
+- [x] **Step 2: 手动端到端冒烟**
 
-```bash
-cd backend-python
-uv run fastapi dev agent_service/app/main.py
-uv run fastapi dev gateway_service/app/main.py   # 另一终端
-```
+起 agent_service(:8000) + gateway(:8080)，构造真实 source/session_workspace/session 链路后冒烟：
 
-- 用 `curl -N http://localhost:8080/api/sessions/{id}/stream` 验证 SSE 帧为合法 JSON、`id:` 为 sequence_no
-- 前端发一条消息，确认 agent 回复经 SSE 回流并渲染到 Chat
-- Workspace 页能拉到 source/session_workspaces 与逐层文件树
+- ✅ gateway 读路径与 agent_service 直连一致（`/sessions`、`/source-workspaces`、`read_proxy`）
+- ✅ `workspace-page` 读到真实文件树，`/tree?path=pkg` 逐层懒加载正常
+- ✅ 发消息 `POST /sessions/{id}/messages` → orchestrator run → **真实 LLM 回复经 SSE 回流**；SSE 帧 `id:1..5`（session_created → user message → run.started → assistant reply → run.completed）均为合法 JSON，`id:` = sequence_no，`since`/Last-Event-ID 续传正常
+- ✅ **修复冒烟暴露的 2 处真实 bug**：`session_page`/`workspace_page` 聚合在 session_workspace 缺失（404）或 root_path 不存在（400/404）时会整页 500——改为捕获并优雅降级（`session_workspace=None` / 空树），补 2 个降级测试（gateway 19 passed）
+- ✅ 将运行时产物目录 `.AgentHub/` 与 `.env` 加入 `backend-python/.gitignore`，避免误入库
 
-- [ ] **Step 3: 单次总提交**（仅在以上全部通过后）
+- [x] **Step 3: 单次总提交**（仅在以上全部通过后）
 
 ```bash
 git add -A

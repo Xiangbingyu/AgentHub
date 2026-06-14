@@ -162,3 +162,60 @@ def test_agent_run_input_persists_domain_event_for_user_message() -> None:
 
     assert response.status == "accepted"
     assert any(event.event_type == "session.message.appended" for event in events)
+
+
+def test_agent_run_input_emits_run_lifecycle_events() -> None:
+    bootstrap_memory_store()
+
+    agent_id = next(agent.agent_id for agent in STORE.agents.values() if agent.agent_kind == "orchestrator")
+    session = _create_active_session()
+    create_response = client.post(
+        "/agent-runs",
+        json={
+            "agent_id": str(agent_id),
+            "session_id": str(session.session_id),
+            "workspace_id": str(uuid4()),
+            "metadata": {},
+        },
+    )
+    run_id = UUID(create_response.json()["run_id"])
+
+    service = AgentRunInputService(
+        agent_run_repository=AgentRunRepository(),
+        agent_repository=AgentRepository(),
+        input_event_repository=InputEventRepository(),
+    )
+    service.executor_factory = lambda runtime: SimpleNamespace(
+        execute=lambda runtime_bundle, request: SimpleNamespace(
+            content="agent reply", tool_calls=[], raw={}
+        )
+    )
+
+    service.input(
+        run_id=run_id,
+        payload=AgentRunInputRequest(
+            input_id=uuid4(),
+            type="user_input",
+            payload={"content": "hello"},
+            idempotency_key=str(uuid4()),
+        ),
+    )
+
+    run = AgentRunRepository().get_by_id(run_id)
+    assert run is not None
+    events = DomainEventRepository().list_by_session_id(run.session_id)
+    event_types = [event.event_type for event in events]
+
+    assert "run.started" in event_types
+    assert "run.completed" in event_types
+    # agent 回复落事件，且 role 为 assistant
+    assert any(
+        event.event_type == "session.message.appended"
+        and event.payload.get("role") == "assistant"
+        and event.payload.get("content") == "agent reply"
+        for event in events
+    )
+    # sequence_no 单调递增
+    assert [event.sequence_no for event in events] == sorted(
+        event.sequence_no for event in events
+    )

@@ -35,6 +35,13 @@ class SubtaskRepository:
         subtasks = [SubtaskModel.model_validate_json(row[0]) for row in rows]
         return [subtask for subtask in subtasks if subtask.parent_run_id == parent_run_id]
 
+    def list_by_session_id(self, session_id: UUID) -> list[SubtaskModel]:
+        conn = get_connection()
+        rows = conn.execute("SELECT payload FROM subtasks").fetchall()
+        conn.close()
+        subtasks = [SubtaskModel.model_validate_json(row[0]) for row in rows]
+        return [subtask for subtask in subtasks if subtask.session_id == session_id]
+
     def update_status(self, subtask_id: UUID, status: str) -> SubtaskModel | None:
         subtask = self.get_by_id(subtask_id)
         if subtask is None:
