@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_version: str = "0.1.0"
     sqlite_db_path: str = "./.AgentHub/agenthub.db"
+    session_workspace_root: str = "./.AgentHub/session-workspaces"
     test_api_key: str | None = None
     test_base_url: str | None = None
     test_model: str | None = None
