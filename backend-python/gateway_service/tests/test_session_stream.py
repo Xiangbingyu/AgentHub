@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from gateway_service.main import create_app
+from gateway_service.app.main import create_app
 
 
 def test_session_stream_returns_text_event_stream(monkeypatch) -> None:

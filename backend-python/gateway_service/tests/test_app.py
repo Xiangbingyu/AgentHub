@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from gateway_service.main import create_app
+from gateway_service.app.main import create_app
 
 
 def test_gateway_package_exposes_create_app_from_app_main() -> None:
