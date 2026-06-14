@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.client.agent_service_client import AgentServiceClient
+from gateway_service.app.client.agent_service_client import AgentServiceClient
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

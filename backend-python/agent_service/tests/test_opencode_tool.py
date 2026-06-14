@@ -46,8 +46,8 @@ def test_opencode_tool_uses_agent_tool_options(monkeypatch) -> None:
         captured["timeout"] = kwargs["timeout"]
         return type("Completed", (), {"stdout": '{"type":"text","part":{"type":"text","text":"opencode ok"}}', "stderr": "", "returncode": 0})()
 
-    monkeypatch.setattr("app.tools.opencode_tool.subprocess.run", fake_run)
-    monkeypatch.setattr("app.tools.framework_adapters.opencode_adapter.os.name", "posix")
+    monkeypatch.setattr("agent_service.app.tools.opencode_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_service.app.tools.framework_adapters.opencode_adapter.os.name", "posix")
 
     result = OpenCodeTool().run(runtime=runtime_bundle, arguments={"prompt": "Rename the function"})
 

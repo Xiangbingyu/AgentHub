@@ -48,8 +48,8 @@ def test_claude_code_tool_uses_agent_tool_options(monkeypatch) -> None:
         captured["timeout"] = kwargs["timeout"]
         return type("Completed", (), {"stdout": '{"content":"tool ok"}', "stderr": "", "returncode": 0})()
 
-    monkeypatch.setattr("app.tools.claude_code_tool.subprocess.run", fake_run)
-    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
+    monkeypatch.setattr("agent_service.app.tools.claude_code_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_service.app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
 
     result = ClaudeCodeTool().run(runtime=runtime_bundle, arguments={"prompt": "Refactor app.py"})
 
@@ -70,8 +70,8 @@ def test_claude_code_tool_forces_utf8_subprocess_decoding_on_windows(monkeypatch
         captured.update(kwargs)
         return type("Completed", (), {"stdout": '{"content":"tool ok"}', "stderr": "", "returncode": 0})()
 
-    monkeypatch.setattr("app.tools.claude_code_tool.subprocess.run", fake_run)
-    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "nt")
+    monkeypatch.setattr("agent_service.app.tools.claude_code_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_service.app.tools.framework_adapters.claude_code_adapter.os.name", "nt")
 
     result = ClaudeCodeTool().run(runtime=runtime_bundle, arguments={"prompt": "Refactor app.py"})
 
@@ -97,8 +97,8 @@ def test_claude_code_tool_decodes_byte_output_with_utf8_replacement(monkeypatch)
             },
         )()
 
-    monkeypatch.setattr("app.tools.claude_code_tool.subprocess.run", fake_run)
-    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
+    monkeypatch.setattr("agent_service.app.tools.claude_code_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_service.app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
 
     result = ClaudeCodeTool().run(runtime=runtime_bundle, arguments={"prompt": "Refactor app.py"})
 

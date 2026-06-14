@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from main import create_app
+from gateway_service.main import create_app
 
 
 def test_gateway_app_healthz() -> None:

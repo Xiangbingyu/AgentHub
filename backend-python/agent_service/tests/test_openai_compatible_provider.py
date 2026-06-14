@@ -38,7 +38,7 @@ def test_openai_compatible_provider_returns_tool_calls(monkeypatch) -> None:
         def json(self):
             return payload
 
-    monkeypatch.setattr("app.llm.openai_compatible_provider.httpx.post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr("agent_service.app.llm.openai_compatible_provider.httpx.post", lambda *args, **kwargs: FakeResponse())
 
     response = provider.complete(
         LlmRequest(

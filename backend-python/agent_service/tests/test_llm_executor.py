@@ -173,7 +173,7 @@ def test_opencode_adapter_prefers_cmd_entrypoint_on_windows(monkeypatch) -> None
 
     monkeypatch.setattr("agent_service.app.tools.framework_adapters.opencode_adapter.os.name", "nt")
     monkeypatch.setattr(
-        "app.tools.framework_adapters.opencode_adapter.shutil.which",
+        "agent_service.app.tools.framework_adapters.opencode_adapter.shutil.which",
         lambda candidate: f"C:/tools/{candidate}" if candidate == "opencode.cmd" else None,
     )
 

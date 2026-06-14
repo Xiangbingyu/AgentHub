@@ -46,8 +46,8 @@ def test_claude_code_tool_executes_adapter_inline(monkeypatch) -> None:
         captured["timeout"] = kwargs["timeout"]
         return type("Completed", (), {"stdout": '{"content":"done"}', "stderr": "", "returncode": 0})()
 
-    monkeypatch.setattr("app.tools.claude_code_tool.subprocess.run", fake_run)
-    monkeypatch.setattr("app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
+    monkeypatch.setattr("agent_service.app.tools.claude_code_tool.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_service.app.tools.framework_adapters.claude_code_adapter.os.name", "posix")
 
     response = ClaudeCodeTool().run(runtime=runtime, arguments={"prompt": "Update the file"})
 

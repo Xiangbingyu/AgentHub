@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from app.api.session_page import router as session_page_router
-from app.api.session_stream import router as session_stream_router
-from app.api.workspace_page import router as workspace_page_router
+from gateway_service.app.api.session_page import router as session_page_router
+from gateway_service.app.api.session_stream import router as session_stream_router
+from gateway_service.app.api.workspace_page import router as workspace_page_router
 
 
 def create_app() -> FastAPI:
