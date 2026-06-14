@@ -31,6 +31,12 @@ async def create_session(request: Request):
     return AgentServiceClient().create_session(body)
 
 
+@router.post("/sessions/from-source")
+async def create_session_from_source(request: Request):
+    body = await request.json()
+    return AgentServiceClient().create_session_from_source(body)
+
+
 @router.post("/sessions/{session_id}/delete")
 def delete_session(session_id: str):
     return AgentServiceClient().delete_session(session_id)
@@ -46,3 +52,9 @@ async def create_source_workspace(request: Request):
 async def create_session_workspace(request: Request):
     body = await request.json()
     return AgentServiceClient().create_session_workspace(body)
+
+
+@router.post("/session-workspaces/derive")
+async def derive_session_workspace(request: Request):
+    body = await request.json()
+    return AgentServiceClient().derive_session_workspace(body)

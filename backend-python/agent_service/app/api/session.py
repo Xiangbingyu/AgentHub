@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from agent_service.app.schemas.session import SessionCreateRequest
+from agent_service.app.schemas.session import SessionCreateRequest, SessionFromSourceRequest
 from agent_service.app.services.session_message_service import SessionMessageService
 from agent_service.app.services.session_service import SessionService
 
@@ -23,6 +23,14 @@ def get_service() -> SessionService:
 @router.post("")
 def create_session(payload: SessionCreateRequest):
     return get_service().create(payload)
+
+
+@router.post("/from-source")
+def create_session_from_source(payload: SessionFromSourceRequest):
+    try:
+        return get_service().create_from_source(payload.source_workspace_id, payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{session_id}/delete")

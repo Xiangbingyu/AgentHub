@@ -9,6 +9,7 @@ from agent_service.app.repositories.domain_event_repository import DomainEventRe
 from agent_service.app.repositories.session_repository import SessionRepository
 from agent_service.app.repositories.session_workspace_repository import SessionWorkspaceRepository
 from agent_service.app.schemas.session import SessionCreateRequest, SessionResponse
+from agent_service.app.services.session_workspace_service import SessionWorkspaceService
 
 
 class SessionService:
@@ -17,10 +18,12 @@ class SessionService:
         session_repository: SessionRepository | None = None,
         session_workspace_repository: SessionWorkspaceRepository | None = None,
         domain_event_repository: DomainEventRepository | None = None,
+        session_workspace_service: SessionWorkspaceService | None = None,
     ) -> None:
         self.session_repository = session_repository or SessionRepository()
         self.session_workspace_repository = session_workspace_repository or SessionWorkspaceRepository()
         self.domain_event_repository = domain_event_repository or DomainEventRepository()
+        self.session_workspace_service = session_workspace_service or SessionWorkspaceService()
 
     def create(self, payload: SessionCreateRequest) -> SessionResponse:
         session_workspace = self.session_workspace_repository.get_by_id(payload.session_workspace_id)
@@ -52,6 +55,16 @@ class SessionService:
             )
         )
         return SessionResponse.model_validate(session.model_dump())
+
+    def create_from_source(self, source_workspace_id: UUID, title: str) -> SessionResponse:
+        """选 source workspace → 自动派生 session workspace → 建 session（原子组合）。"""
+        derived = self.session_workspace_service.derive_from_source(source_workspace_id)
+        return self.create(
+            SessionCreateRequest(
+                session_workspace_id=derived.session_workspace_id,
+                title=title,
+            )
+        )
 
     def delete(self, session_id: UUID) -> SessionResponse:
         session = self.session_repository.get_by_id(session_id)

@@ -51,6 +51,20 @@ export function createSession(body) {
   return fetchJson('/sessions', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function createSessionFromSource({ source_workspace_id, title }) {
+  return fetchJson('/sessions/from-source', {
+    method: 'POST',
+    body: JSON.stringify({ source_workspace_id, title }),
+  });
+}
+
+export function createSourceWorkspace({ name, root_path }) {
+  return fetchJson('/source-workspaces', {
+    method: 'POST',
+    body: JSON.stringify({ name, root_path }),
+  });
+}
+
 // SSE 流地址（EventSource 直接用，不经 fetch）
 export function sessionStreamUrl(sessionId) {
   return `${API_BASE}/sessions/${sessionId}/stream`;

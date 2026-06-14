@@ -1,5 +1,7 @@
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from gateway_service.app.api.read_proxy import router as read_proxy_router
 from gateway_service.app.api.session_page import router as session_page_router
@@ -20,6 +22,16 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(httpx.HTTPStatusError)
+    async def _upstream_status_error(_request, exc: httpx.HTTPStatusError):
+        # 透传 agent_service 的 4xx/5xx 状态码与响应体，避免被包成 500
+        response = exc.response
+        try:
+            detail = response.json()
+        except ValueError:
+            detail = {"detail": response.text}
+        return JSONResponse(status_code=response.status_code, content=detail)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

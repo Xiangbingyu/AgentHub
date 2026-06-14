@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import WorkspaceBrowser from '../../components/WorkspaceBrowser/WorkspaceBrowser';
 import WorkspaceDetailPanel from '../../components/WorkspaceDetailPanel/WorkspaceDetailPanel';
+import Modal from '../../components/Modal/Modal';
 import {
   listSourceWorkspaces,
   getWorkspacePage,
   getWorkspaceTree,
+  createSourceWorkspace,
 } from '../../utils/api';
 import './Workspace.css';
 
@@ -44,57 +46,79 @@ export default function Workspace() {
   const [selectedResourceId, setSelectedResourceId] = useState('');
   const [detailsById, setDetailsById] = useState({});
 
-  // 启动：拉 source workspace 列表，并为每个 source 拉根层 tree + 派生 session workspaces
+  // 建 source workspace 弹窗状态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPath, setNewPath] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  const loadSources = async () => {
+    let rows;
+    try {
+      rows = await listSourceWorkspaces();
+    } catch {
+      setSources([]);
+      return [];
+    }
+    const enriched = await Promise.all(
+      rows.map(async (source) => {
+        const sourceId = source.source_workspace_id;
+        let page;
+        try {
+          page = await getWorkspacePage(sourceId);
+        } catch {
+          page = {};
+        }
+        return {
+          ...source,
+          files: (page.tree ?? []).map((entry) => toFileNode(sourceId, entry)),
+          session_workspaces: page.session_workspaces ?? [],
+        };
+      }),
+    );
+    setSources(enriched);
+    setSelectedResourceId((current) => current || enriched[0]?.source_workspace_id || '');
+    const details = {};
+    enriched.forEach((source) => {
+      details[source.source_workspace_id] = {
+        title: source.name,
+        type_label: 'Source Workspace · 真源',
+        path: source.root_path,
+        description: `状态：${source.status}`,
+        bindings: [`派生 ${source.session_workspaces.length} 个 session workspace`],
+        preview_kind: 'note',
+        preview: '选择文件查看路径与详情。',
+      };
+    });
+    setDetailsById((current) => ({ ...details, ...current }));
+    return enriched;
+  };
+
+  // 启动：拉 source workspace 列表 + 每个 source 的根层 tree + 派生 session workspaces
   useEffect(() => {
-    let cancelled = false;
-    listSourceWorkspaces()
-      .then(async (rows) => {
-        const enriched = await Promise.all(
-          rows.map(async (source) => {
-            const sourceId = source.source_workspace_id;
-            let page;
-            try {
-              page = await getWorkspacePage(sourceId);
-            } catch {
-              page = {};
-            }
-            return {
-              ...source,
-              files: (page.tree ?? []).map((entry) => toFileNode(sourceId, entry)),
-              session_workspaces: page.session_workspaces ?? [],
-            };
-          }),
-        );
-        if (cancelled) {
-          return;
-        }
-        setSources(enriched);
-        setSelectedResourceId(
-          (current) => current || enriched[0]?.source_workspace_id || '',
-        );
-        const details = {};
-        enriched.forEach((source) => {
-          details[source.source_workspace_id] = {
-            title: source.name,
-            type_label: 'Source Workspace · 真源',
-            path: source.root_path,
-            description: `状态：${source.status}`,
-            bindings: [`派生 ${source.session_workspaces.length} 个 session workspace`],
-            preview_kind: 'note',
-            preview: '选择文件查看路径与详情。',
-          };
-        });
-        setDetailsById(details);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSources([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    // loadSources 的 setState 均在 await 之后异步触发，非同步级联渲染
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSources();
   }, []);
+
+  function handleCreateSource() {
+    if (!newName.trim() || !newPath.trim()) {
+      setCreateError('请填写名称与本地目录路径');
+      return;
+    }
+    setCreating(true);
+    setCreateError('');
+    createSourceWorkspace({ name: newName.trim(), root_path: newPath.trim() })
+      .then(() => {
+        setCreateOpen(false);
+        setNewName('');
+        setNewPath('');
+        return loadSources();
+      })
+      .catch((err) => setCreateError(err.message || '创建失败，请确认目录存在'))
+      .finally(() => setCreating(false));
+  }
 
   // 目录展开：按需拉该层 tree 并注入 children
   const handleExpandDirectory = useCallback(
@@ -147,8 +171,49 @@ export default function Workspace() {
         selectedResourceId={selectedResourceId}
         onSelectResource={handleSelectResource}
         onExpandDirectory={handleExpandDirectory}
+        onCreateSource={() => {
+          setCreateError('');
+          setCreateOpen(true);
+        }}
       />
       <WorkspaceDetailPanel detail={detail} />
+
+      <Modal open={createOpen} title="新建 Source Workspace" onClose={() => setCreateOpen(false)}>
+        {createError ? <div className="modal-error">{createError}</div> : null}
+        <div className="modal-field">
+          <label htmlFor="new-source-name">名称</label>
+          <input
+            id="new-source-name"
+            type="text"
+            value={newName}
+            placeholder="例如：my-project"
+            onChange={(event) => setNewName(event.target.value)}
+          />
+        </div>
+        <div className="modal-field">
+          <label htmlFor="new-source-path">本地目录路径（须已存在）</label>
+          <input
+            id="new-source-path"
+            type="text"
+            value={newPath}
+            placeholder="例如：E:/projects/my-project"
+            onChange={(event) => setNewPath(event.target.value)}
+          />
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="modal-btn" onClick={() => setCreateOpen(false)}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="modal-btn primary"
+            disabled={creating}
+            onClick={handleCreateSource}
+          >
+            {creating ? '创建中…' : '创建'}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

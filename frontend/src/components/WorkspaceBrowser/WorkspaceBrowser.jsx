@@ -16,6 +16,7 @@ export default function WorkspaceBrowser({
   selectedResourceId,
   onSelectResource,
   onExpandDirectory,
+  onCreateSource,
 }) {
   const [expandedKeys, setExpandedKeys] = useState(() => {
     const keys = new Set();
@@ -93,7 +94,7 @@ export default function WorkspaceBrowser({
           <h2>Workspace</h2>
           <p>资源导航</p>
         </div>
-        <button type="button" className="workspace-primary-btn">
+        <button type="button" className="workspace-primary-btn" onClick={() => onCreateSource?.()}>
           新建
         </button>
       </div>

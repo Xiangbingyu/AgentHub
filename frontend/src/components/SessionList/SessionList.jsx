@@ -20,7 +20,7 @@ function formatSessionTime(value) {
   });
 }
 
-export default function SessionList({ sessions, activeSessionId, onSelectSession }) {
+export default function SessionList({ sessions, activeSessionId, onSelectSession, onCreateSession }) {
   const [keyword, setKeyword] = useState('');
 
   const filteredSessions = sessions.filter((session) => {
@@ -35,7 +35,7 @@ export default function SessionList({ sessions, activeSessionId, onSelectSession
       <div className="session-header">
         <div className="header-top">
           <h2>Sessions</h2>
-          <button type="button" className="session-create-btn">
+          <button type="button" className="session-create-btn" onClick={() => onCreateSession?.()}>
             <Plus size={16} />
             新建 Session
           </button>

@@ -74,6 +74,9 @@ class AgentServiceClient:
     def create_session(self, body: dict) -> dict:
         return self._post("/sessions", json=body)
 
+    def create_session_from_source(self, body: dict) -> dict:
+        return self._post("/sessions/from-source", json=body)
+
     def delete_session(self, session_id: str) -> dict:
         return self._post(f"/sessions/{session_id}/delete")
 
@@ -82,6 +85,9 @@ class AgentServiceClient:
 
     def create_session_workspace(self, body: dict) -> dict:
         return self._post("/session-workspaces", json=body)
+
+    def derive_session_workspace(self, body: dict) -> dict:
+        return self._post("/session-workspaces/derive", json=body)
 
     def create_agent_run(self, body: dict) -> dict:
         return self._post("/agent-runs", json=body)

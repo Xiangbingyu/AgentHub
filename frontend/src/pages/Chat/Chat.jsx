@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import SessionList from '../../components/SessionList/SessionList';
 import ChatPanel from '../../components/ChatPanel/ChatPanel';
 import RuntimePanel from '../../components/RuntimePanel/RuntimePanel';
+import Modal from '../../components/Modal/Modal';
 import useSessionStream from '../../hooks/useSessionStream';
 import {
   listSessions,
   getSessionPage,
   postSessionMessage,
+  listSourceWorkspaces,
+  createSessionFromSource,
 } from '../../utils/api';
 import './Chat.css';
 
@@ -42,15 +45,60 @@ export default function Chat() {
   const [runtimeCollapsed, setRuntimeCollapsed] = useState(false);
   const containerRef = useRef(null);
 
-  // 应用启动：拉会话列表
-  useEffect(() => {
-    listSessions()
+  // 建 session 弹窗状态
+  const [createOpen, setCreateOpen] = useState(false);
+  const [sources, setSources] = useState([]);
+  const [newTitle, setNewTitle] = useState('');
+  const [newSourceId, setNewSourceId] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  function refreshSessions(selectId) {
+    return listSessions()
       .then((rows) => {
         setSessions(rows);
-        setActiveSessionId((current) => current || rows[0]?.session_id || '');
+        if (selectId) {
+          setActiveSessionId(selectId);
+        } else {
+          setActiveSessionId((current) => current || rows[0]?.session_id || '');
+        }
+        return rows;
       })
       .catch(() => setSessions([]));
+  }
+
+  // 应用启动：拉会话列表
+  useEffect(() => {
+    refreshSessions();
   }, []);
+
+  function openCreateModal() {
+    setCreateError('');
+    setNewTitle('');
+    setCreateOpen(true);
+    listSourceWorkspaces()
+      .then((rows) => {
+        setSources(rows);
+        setNewSourceId((current) => current || rows[0]?.source_workspace_id || '');
+      })
+      .catch(() => setSources([]));
+  }
+
+  function handleCreateSession() {
+    if (!newSourceId || !newTitle.trim()) {
+      setCreateError('请填写标题并选择一个 source workspace');
+      return;
+    }
+    setCreating(true);
+    setCreateError('');
+    createSessionFromSource({ source_workspace_id: newSourceId, title: newTitle.trim() })
+      .then((session) => {
+        setCreateOpen(false);
+        return refreshSessions(session.session_id);
+      })
+      .catch((err) => setCreateError(err.message || '创建失败'))
+      .finally(() => setCreating(false));
+  }
 
   // 选中 session：拉历史 + workspace 快照
   useEffect(() => {
@@ -164,6 +212,7 @@ export default function Chat() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={setActiveSessionId}
+        onCreateSession={openCreateModal}
       />
       <div className="chat-page-center">
         <ChatPanel
@@ -191,6 +240,48 @@ export default function Chat() {
           onToggleCollapse={() => setRuntimeCollapsed((current) => !current)}
         />
       </div>
+
+      <Modal open={createOpen} title="新建 Session" onClose={() => setCreateOpen(false)}>
+        {createError ? <div className="modal-error">{createError}</div> : null}
+        <div className="modal-field">
+          <label htmlFor="new-session-title">会话标题</label>
+          <input
+            id="new-session-title"
+            type="text"
+            value={newTitle}
+            placeholder="例如：重构登录模块"
+            onChange={(event) => setNewTitle(event.target.value)}
+          />
+        </div>
+        <div className="modal-field">
+          <label htmlFor="new-session-source">Source Workspace（将自动派生隔离副本）</label>
+          <select
+            id="new-session-source"
+            value={newSourceId}
+            onChange={(event) => setNewSourceId(event.target.value)}
+          >
+            {sources.length === 0 ? <option value="">（暂无，请先在 Workspace 页创建）</option> : null}
+            {sources.map((source) => (
+              <option key={source.source_workspace_id} value={source.source_workspace_id}>
+                {source.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="modal-btn" onClick={() => setCreateOpen(false)}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="modal-btn primary"
+            disabled={creating}
+            onClick={handleCreateSession}
+          >
+            {creating ? '创建中…' : '创建'}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

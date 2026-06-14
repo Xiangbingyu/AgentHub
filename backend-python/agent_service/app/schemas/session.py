@@ -10,6 +10,11 @@ class SessionCreateRequest(BaseModel):
     title: str
 
 
+class SessionFromSourceRequest(BaseModel):
+    source_workspace_id: UUID
+    title: str
+
+
 class SessionResponse(BaseModel):
     session_id: UUID
     session_workspace_id: UUID
