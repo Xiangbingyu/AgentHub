@@ -112,3 +112,69 @@ def test_get_session_workspace_tree(tmp_path: Path) -> None:
 
     # 未知 session workspace → 404
     assert client.get(f"/session-workspaces/{uuid4()}/tree").status_code == 404
+
+
+def test_get_source_workspace_file(tmp_path: Path) -> None:
+    bootstrap_memory_store()
+    (tmp_path / "hello.py").write_text("print('hi')\n", encoding="utf-8")
+    source = SourceWorkspaceRepository().create(
+        SourceWorkspaceModel(
+            source_workspace_id=uuid4(),
+            name="file-src",
+            root_path=str(tmp_path),
+        )
+    )
+
+    resp = client.get(
+        f"/source-workspaces/{source.source_workspace_id}/file",
+        params={"path": "hello.py"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["binary"] is False
+    assert "print('hi')" in body["content"]
+    assert body["encoding"] == "utf-8"
+
+    # 越界路径 → 400
+    assert (
+        client.get(
+            f"/source-workspaces/{source.source_workspace_id}/file",
+            params={"path": "../escape.txt"},
+        ).status_code
+        == 400
+    )
+    # 不存在的文件 → 400
+    assert (
+        client.get(
+            f"/source-workspaces/{source.source_workspace_id}/file",
+            params={"path": "nope.txt"},
+        ).status_code
+        == 400
+    )
+
+
+def test_get_session_workspace_file(tmp_path: Path) -> None:
+    bootstrap_memory_store()
+    plans_dir = tmp_path / ".AgentHub" / "plans"
+    plans_dir.mkdir(parents=True)
+    (plans_dir / "demo.execution-plan.md").write_text("# plan\n- [x] step", encoding="utf-8")
+    sw = SessionWorkspaceRepository().create(
+        SessionWorkspaceModel(
+            session_workspace_id=uuid4(),
+            source_workspace_id=uuid4(),
+            name="file-sw",
+            root_path=str(tmp_path),
+            status="ready",
+        )
+    )
+
+    resp = client.get(
+        f"/session-workspaces/{sw.session_workspace_id}/file",
+        params={"path": ".AgentHub/plans/demo.execution-plan.md"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "# plan" in body["content"]
+    assert body["binary"] is False
+
+    assert client.get(f"/session-workspaces/{uuid4()}/file", params={"path": "x"}).status_code == 404

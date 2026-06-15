@@ -78,6 +78,16 @@ class AgentServiceClient:
             f"/session-workspaces/{session_workspace_id}/tree", params={"path": path}
         )
 
+    def get_source_workspace_file(self, source_workspace_id: str, path: str) -> dict:
+        return self._get(
+            f"/source-workspaces/{source_workspace_id}/file", params={"path": path}
+        )
+
+    def get_session_workspace_file(self, session_workspace_id: str, path: str) -> dict:
+        return self._get(
+            f"/session-workspaces/{session_workspace_id}/file", params={"path": path}
+        )
+
     def get_agent_run(self, run_id: str) -> dict:
         return self._get(f"/agent-runs/{run_id}")
 

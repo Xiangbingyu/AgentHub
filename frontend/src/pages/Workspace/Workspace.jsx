@@ -7,6 +7,8 @@ import {
   useGetWorkspacePageQuery,
   useLazyGetWorkspaceTreeQuery,
   useLazyGetSessionWorkspaceTreeQuery,
+  useLazyGetSourceWorkspaceFileQuery,
+  useLazyGetSessionWorkspaceFileQuery,
   useCreateSourceWorkspaceMutation,
 } from '../../store/api';
 import './Workspace.css';
@@ -68,6 +70,8 @@ export default function Workspace() {
   });
   const [triggerTree] = useLazyGetWorkspaceTreeQuery();
   const [triggerSessionTree] = useLazyGetSessionWorkspaceTreeQuery();
+  const [triggerSourceFile] = useLazyGetSourceWorkspaceFileQuery();
+  const [triggerSessionFile] = useLazyGetSessionWorkspaceFileQuery();
   const [createSource, { isLoading: creating }] = useCreateSourceWorkspaceMutation();
 
   // 切换 source 时清空上一个 source 的展开缓存（渲染期同步，避免 effect 级联）
@@ -184,31 +188,72 @@ export default function Workspace() {
     [triggerSessionTree, sessionRootTrees],
   );
 
-  // 选中文件/节点：source 行切换活动 source，文件节点构造最小详情
+  // 选中文件/节点：source 行切换活动 source；文件节点拉内容渲染到预览区。
+  // 节点 id：source 文件为 "<sourceId>:<path>"，session 文件为 "sw:<swId>:<path>"。
   function handleSelectResource(id) {
     setSelectedResourceId(id);
     if (sourceRows.some((s) => s.source_workspace_id === id)) {
       setPickedSourceId(id);
       return;
     }
-    setFileDetails((current) => {
-      if (current[id]) {
-        return current;
-      }
-      const path = id.includes(':') ? id.split(':').slice(1).join(':') : id;
-      return {
-        ...current,
-        [id]: {
-          title: path.split('/').pop() || id,
-          type_label: 'File · 派生/真源',
-          path,
-          description: '来自 workspace 文件树',
-          bindings: [],
-          preview_kind: 'note',
-          preview: '内容预览待接入文件读取接口。',
-        },
-      };
-    });
+
+    const parts = id.split(':');
+    const isSession = parts[0] === 'sw';
+    const path = isSession ? parts.slice(2).join(':') : parts.slice(1).join(':');
+    const name = path.split('/').pop() || id;
+
+    // 先放一个 loading 占位，拉到内容后回填
+    setFileDetails((current) => ({
+      ...current,
+      [id]: {
+        title: name,
+        type_label: isSession ? 'File · session workspace' : 'File · source workspace',
+        path,
+        description: '加载中…',
+        bindings: [],
+        preview_kind: 'note',
+        preview: '正在读取文件内容…',
+      },
+    }));
+
+    const fetcher = isSession
+      ? triggerSessionFile({ sessionWorkspaceId: parts[1], path })
+      : triggerSourceFile({ sourceId: parts[0], path });
+
+    fetcher
+      .unwrap()
+      .then((file) => {
+        const sizeKb = (file.size / 1024).toFixed(1);
+        const preview = file.binary
+          ? '（二进制文件，无法预览）'
+          : file.content + (file.truncated ? '\n\n… 文件过大，仅显示前 512KB' : '');
+        setFileDetails((current) => ({
+          ...current,
+          [id]: {
+            title: name,
+            type_label: isSession ? 'File · session workspace' : 'File · source workspace',
+            path,
+            description: `${file.binary ? '二进制' : file.encoding} · ${sizeKb} KB`,
+            bindings: [],
+            preview_kind: file.binary ? 'note' : 'code',
+            preview,
+          },
+        }));
+      })
+      .catch((err) => {
+        setFileDetails((current) => ({
+          ...current,
+          [id]: {
+            title: name,
+            type_label: 'File',
+            path,
+            description: '读取失败',
+            bindings: [],
+            preview_kind: 'note',
+            preview: err?.data?.detail || err?.error || '无法读取该文件。',
+          },
+        }));
+      });
   }
 
   const detail = detailsById[effectiveSelectedId] ?? null;

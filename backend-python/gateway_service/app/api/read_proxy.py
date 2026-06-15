@@ -25,3 +25,13 @@ def get_workspace_tree(source_workspace_id: str, path: str = Query(default="."))
 @router.get("/session-workspaces/{session_workspace_id}/tree")
 def get_session_workspace_tree(session_workspace_id: str, path: str = Query(default=".")):
     return AgentServiceClient().get_session_workspace_tree(session_workspace_id, path=path)
+
+
+@router.get("/source-workspaces/{source_workspace_id}/file")
+def get_source_workspace_file(source_workspace_id: str, path: str = Query(...)):
+    return AgentServiceClient().get_source_workspace_file(source_workspace_id, path=path)
+
+
+@router.get("/session-workspaces/{session_workspace_id}/file")
+def get_session_workspace_file(session_workspace_id: str, path: str = Query(...)):
+    return AgentServiceClient().get_session_workspace_file(session_workspace_id, path=path)
