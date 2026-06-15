@@ -118,7 +118,10 @@ class AgentRunInputService:
                 event_type="session.message.appended",
                 event_scope="main_timeline",
                 sequence_no=sequence_no,
-                payload={"content": self._build_user_message_content(input_event)},
+                payload={
+                    "role": "user",
+                    "content": self._build_user_message_content(input_event),
+                },
             )
         )
 

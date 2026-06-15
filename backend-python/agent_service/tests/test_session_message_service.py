@@ -34,7 +34,7 @@ def test_send_creates_orchestrator_run_when_none_exists() -> None:
     bootstrap_memory_store()
     session = _create_session()
     fake_input = _FakeInputService()
-    service = SessionMessageService(input_service=fake_input)
+    service = SessionMessageService(input_service=fake_input, async_runner=lambda job: job())
 
     response = service.send(session.session_id, content="hello")
 
@@ -55,7 +55,7 @@ def test_send_reuses_existing_run() -> None:
     bootstrap_memory_store()
     session = _create_session()
     fake_input = _FakeInputService()
-    service = SessionMessageService(input_service=fake_input)
+    service = SessionMessageService(input_service=fake_input, async_runner=lambda job: job())
 
     service.send(session.session_id, content="first")
     service.send(session.session_id, content="second")
@@ -66,7 +66,9 @@ def test_send_reuses_existing_run() -> None:
 
 def test_send_raises_for_unknown_session() -> None:
     bootstrap_memory_store()
-    service = SessionMessageService(input_service=_FakeInputService())
+    service = SessionMessageService(
+        input_service=_FakeInputService(), async_runner=lambda job: job()
+    )
 
     try:
         service.send(uuid4(), content="x")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from uuid import UUID, uuid4
 
 from agent_service.app.repositories.agent_repository import AgentRepository
@@ -16,6 +17,10 @@ class SessionMessageService:
 
     内部解析该 session 的活动 orchestrator run（没有则新建一个），再转发到
     ``AgentRunInputService.input``。``input_service`` 可注入以便测试不打真实 LLM。
+
+    LLM 执行经 ``async_runner`` 在后台线程跑（默认 daemon 线程），``send`` 录入
+    用户消息后立即返回，agent 回复经 SSE 回流——避免同步阻塞触发 gateway 超时。
+    测试可注入同步 ``async_runner`` 以拿到确定性结果。
     """
 
     def __init__(
@@ -24,15 +29,21 @@ class SessionMessageService:
         session_repository: SessionRepository | None = None,
         agent_run_repository: AgentRunRepository | None = None,
         agent_repository: AgentRepository | None = None,
+        async_runner=None,
     ) -> None:
         self.session_repository = session_repository or SessionRepository()
         self.agent_run_repository = agent_run_repository or AgentRunRepository()
         self.agent_repository = agent_repository or AgentRepository()
         self._input_service = input_service
+        self._async_runner = async_runner or self._run_async
         self._create_service = AgentRunCreateService(
             agent_repository=self.agent_repository,
             agent_run_repository=self.agent_run_repository,
         )
+
+    def _run_async(self, job) -> None:
+        thread = threading.Thread(target=job, daemon=True)
+        thread.start()
 
     def _resolve_input_service(self):
         if self._input_service is not None:
@@ -82,4 +93,9 @@ class SessionMessageService:
             payload={"content": content},
             idempotency_key=str(uuid4()),
         )
-        return self._resolve_input_service().input(run_id, payload)
+
+        # LLM 工具循环可能跑很久（多轮），放后台线程，POST 立即返回。
+        # 用户消息事件在 input() 内部、LLM 调用之前落库，SSE 仍能即时推出。
+        input_service = self._resolve_input_service()
+        self._async_runner(lambda: input_service.input(run_id, payload))
+        return AgentRunInputResponse(run_id=run_id, status="accepted")
