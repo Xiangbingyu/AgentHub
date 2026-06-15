@@ -91,6 +91,11 @@
   gap: 12px;
 }
 
+/* 用户消息整体靠右：头像在右、气泡在右 */
+.message-wrapper.send {
+  flex-direction: row-reverse;
+}
+
 .message-avatar {
   width: 36px;
   height: 36px;
@@ -100,7 +105,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
@@ -112,6 +118,11 @@
   display: flex;
   flex-direction: column;
   max-width: 65%;
+}
+
+/* 用户消息内容右对齐 */
+.message-wrapper.send .message-content {
+  align-items: flex-end;
 }
 
 .message-name {
@@ -130,7 +141,7 @@
   background: var(--fs-active);
   color: var(--fs-text-main);
   border: 1px solid transparent;
-  border-radius: 2px 12px 12px 12px;
+  border-radius: 12px 2px 12px 12px;
 }
 
 .message-bubble {
@@ -138,6 +149,18 @@
   font-size: 14px;
   line-height: 1.5;
   word-break: break-word;
+}
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .chat-input-area {

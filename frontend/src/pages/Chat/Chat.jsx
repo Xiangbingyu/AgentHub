@@ -25,12 +25,13 @@ function roleToAuthor(role) {
 
 // 后端 main_timeline 事件 → ChatPanel 消息形状
 function eventToMessage(event) {
+  // 用户消息 payload.role === 'user'；agent 回复为 'assistant'（或缺省按 agent 处理）
   const role = event.payload?.role === 'user' ? 'user' : 'agent';
   return {
     message_id: `evt-${event.sequence_no}`,
     sequence_no: event.sequence_no,
     role,
-    author: event.payload?.author || roleToAuthor(event.payload?.role),
+    author: event.payload?.author || roleToAuthor(role),
     content: event.payload?.content ?? '',
   };
 }
@@ -99,20 +100,38 @@ export default function Chat() {
 
   const sessionWorkspace = sessionPage?.session_workspace ?? null;
 
-  // 历史消息（来自 query）与实时缓冲（来自 SSE）合并、按 sequence_no 去重排序
+  // 历史消息（来自 query）与实时缓冲（来自 SSE / 乐观回显）合并、去重、排序。
+  // - 真实事件带正整数 sequence_no；乐观项 optimistic=true 且无 sequence_no。
+  // - 真实用户消息到达后，丢弃 content 相同的乐观项，避免重复。
   const messages = useMemo(() => {
     const history = (sessionPage?.main_timeline ?? [])
       .filter((event) => event.event_type === 'session.message.appended')
       .map(eventToMessage);
-    const merged = [...history];
-    const seen = new Set(history.map((m) => m.sequence_no));
+
+    const real = [...history];
+    const seenSeq = new Set(history.map((m) => m.sequence_no));
+    const liveReal = [];
+    const liveOptimistic = [];
     for (const m of liveBuffer) {
-      if (!seen.has(m.sequence_no)) {
-        merged.push(m);
-        seen.add(m.sequence_no);
+      if (m.optimistic) {
+        liveOptimistic.push(m);
+      } else if (!seenSeq.has(m.sequence_no)) {
+        liveReal.push(m);
+        seenSeq.add(m.sequence_no);
       }
     }
-    return merged.sort((a, b) => (a.sequence_no ?? 0) - (b.sequence_no ?? 0));
+    real.push(...liveReal);
+    real.sort((a, b) => (a.sequence_no ?? 0) - (b.sequence_no ?? 0));
+
+    // 已被真实用户事件覆盖的乐观项剔除
+    const realUserContents = new Set(
+      real.filter((m) => m.role === 'user').map((m) => m.content),
+    );
+    const pendingOptimistic = liveOptimistic.filter(
+      (m) => !realUserContents.has(m.content),
+    );
+
+    return [...real, ...pendingOptimistic];
   }, [sessionPage, liveBuffer]);
 
   // SSE 实时：把 main_timeline 消息推进实时缓冲（去重在 messages 合并时统一处理）
@@ -135,7 +154,20 @@ export default function Chat() {
     if (!activeSessionId) {
       return;
     }
-    // agent 回复经 SSE 回流追加；用户消息也由后端落 main_timeline 事件回流
+    // 乐观回显：立即把用户消息推入缓冲，无需等 SSE 往返
+    setLiveBuffer((current) => [
+      ...current,
+      {
+        message_id: `optimistic-${current.length}-${content.length}`,
+        sequence_no: null,
+        role: 'user',
+        author: '你',
+        content,
+        optimistic: true,
+        pending: true,
+      },
+    ]);
+    // agent 回复经 SSE 回流追加；真实用户事件回流后会顶替上面的乐观项
     postMessage({ sessionId: activeSessionId, content }).unwrap().catch(() => undefined);
   }
 

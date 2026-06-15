@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Send, Smile, Paperclip, MoreHorizontal } from 'lucide-react';
 import './ChatPanel.css';
 
 export default function ChatPanel({ session, messages, onSendMessage, sending }) {
   const [draft, setDraft] = useState('');
+  const messageEndRef = useRef(null);
+
+  // 新消息进来时滚动到底部
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   if (!session) {
     return (
@@ -48,21 +54,28 @@ export default function ChatPanel({ session, messages, onSendMessage, sending })
         {messages.length === 0 ? (
           <div className="chat-state">还没有消息，开始对话吧。</div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.message_id}
-              className={`message-wrapper ${message.role === 'user' ? 'send' : 'receive'}`}
-            >
-              <div className={`message-avatar ${message.role === 'user' ? 'self' : ''}`}>
-                {message.author[0]}
+          messages.map((message) => {
+            const isUser = message.role === 'user';
+            return (
+              <div
+                key={message.message_id}
+                className={`message-wrapper ${isUser ? 'send' : 'receive'}`}
+              >
+                <div className={`message-avatar ${isUser ? 'self' : ''}`} aria-hidden="true">
+                  {isUser ? '你' : 'AI'}
+                </div>
+                <div className="message-content">
+                  <div className="message-name">{message.author}</div>
+                  <div className="message-bubble">
+                    {message.content}
+                    {message.pending ? <span className="stream-cursor">▋</span> : null}
+                  </div>
+                </div>
               </div>
-              <div className="message-content">
-                <div className="message-name">{message.author}</div>
-                <div className="message-bubble">{message.content}</div>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
+        <div ref={messageEndRef} />
       </div>
 
       <div className="chat-input-area">
