@@ -17,6 +17,8 @@ export default function useSessionStream(sessionId, onEvent) {
       'run.started',
       'run.completed',
       'session.message.appended',
+      'agent.tool_call',
+      'agent.tool_result',
       'subtask.delegated',
       'subtask.completed',
       'plan.updated',

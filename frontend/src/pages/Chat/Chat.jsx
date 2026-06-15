@@ -23,13 +23,53 @@ function roleToAuthor(role) {
   return role === 'user' ? '你' : 'Agent';
 }
 
-// 后端 main_timeline 事件 → ChatPanel 消息形状
-function eventToMessage(event) {
-  // 用户消息 payload.role === 'user'；agent 回复为 'assistant'（或缺省按 agent 处理）
+// 后端 main_timeline 事件 → ChatPanel 时间线项形状。
+// 支持多种 kind：message（左右气泡）、tool_call/tool_result（步骤卡片）、plan（计划清单）。
+const TIMELINE_EVENT_TYPES = [
+  'session.message.appended',
+  'agent.tool_call',
+  'agent.tool_result',
+  'plan.updated',
+];
+
+function eventToTimelineItem(event) {
+  const seq = event.sequence_no;
+  const base = { sequence_no: seq, message_id: `evt-${seq}` };
+
+  if (event.event_type === 'agent.tool_call') {
+    return {
+      ...base,
+      kind: 'tool_call',
+      tool_name: event.payload?.tool_name ?? '',
+      arguments: event.payload?.arguments ?? {},
+    };
+  }
+  if (event.event_type === 'agent.tool_result') {
+    return {
+      ...base,
+      kind: 'tool_result',
+      tool_name: event.payload?.tool_name ?? '',
+      result: event.payload?.result ?? null,
+    };
+  }
+  if (event.event_type === 'plan.updated') {
+    return {
+      ...base,
+      kind: 'plan',
+      title: event.payload?.title ?? '',
+      goal: event.payload?.goal ?? '',
+      status: event.payload?.status ?? '',
+      summary: event.payload?.summary ?? '',
+      steps: event.payload?.steps ?? [],
+      file_path: event.payload?.file_path ?? '',
+    };
+  }
+
+  // session.message.appended：左右气泡
   const role = event.payload?.role === 'user' ? 'user' : 'agent';
   return {
-    message_id: `evt-${event.sequence_no}`,
-    sequence_no: event.sequence_no,
+    ...base,
+    kind: 'message',
     role,
     author: event.payload?.author || roleToAuthor(role),
     content: event.payload?.content ?? '',
@@ -103,13 +143,13 @@ export default function Chat() {
 
   const sessionWorkspace = sessionPage?.session_workspace ?? null;
 
-  // 历史消息（来自 query）与实时缓冲（来自 SSE / 乐观回显）合并、去重、排序。
+  // 历史时间线（来自 query）与实时缓冲（来自 SSE / 乐观回显）合并、去重、排序。
   // - 真实事件带正整数 sequence_no；乐观项 optimistic=true 且无 sequence_no。
   // - 真实用户消息到达后，丢弃 content 相同的乐观项，避免重复。
   const messages = useMemo(() => {
     const history = (sessionPage?.main_timeline ?? [])
-      .filter((event) => event.event_type === 'session.message.appended')
-      .map(eventToMessage);
+      .filter((event) => TIMELINE_EVENT_TYPES.includes(event.event_type))
+      .map(eventToTimelineItem);
 
     const real = [...history];
     const seenSeq = new Set(history.map((m) => m.sequence_no));
@@ -128,7 +168,7 @@ export default function Chat() {
 
     // 已被真实用户事件覆盖的乐观项剔除
     const realUserContents = new Set(
-      real.filter((m) => m.role === 'user').map((m) => m.content),
+      real.filter((m) => m.kind === 'message' && m.role === 'user').map((m) => m.content),
     );
     const pendingOptimistic = liveOptimistic.filter(
       (m) => !realUserContents.has(m.content),
@@ -137,7 +177,13 @@ export default function Chat() {
     return [...real, ...pendingOptimistic];
   }, [sessionPage, liveBuffer]);
 
-  // SSE 实时：消息事件进缓冲；run 生命周期事件驱动 agent 运行态。
+  // 最近一次 plan 步骤数，喂给右侧运行态面板
+  const planSteps = useMemo(() => {
+    const plans = messages.filter((m) => m.kind === 'plan');
+    return plans.length ? (plans[plans.length - 1].steps?.length ?? 0) : 0;
+  }, [messages]);
+
+  // SSE 实时：时间线事件进缓冲；run 生命周期事件驱动 agent 运行态。
   const handleStreamEvent = useCallback((event) => {
     if (event.event_type === 'run.started') {
       setAgentRunning(true);
@@ -147,12 +193,12 @@ export default function Chat() {
       setAgentRunning(false);
       return;
     }
-    if (event.event_type !== 'session.message.appended') {
+    if (!TIMELINE_EVENT_TYPES.includes(event.event_type)) {
       return;
     }
-    const incoming = eventToMessage(event);
-    // agent 回复到达即视为本轮结束（run.completed 可能稍后才到）
-    if (incoming.role === 'agent') {
+    const incoming = eventToTimelineItem(event);
+    // agent 文字回复到达即视为本轮结束（run.completed 可能稍后才到）
+    if (incoming.kind === 'message' && incoming.role === 'agent') {
       setAgentRunning(false);
     }
     setLiveBuffer((current) => {
@@ -175,6 +221,7 @@ export default function Chat() {
       {
         message_id: `optimistic-${current.length}-${content.length}`,
         sequence_no: null,
+        kind: 'message',
         role: 'user',
         author: '你',
         content,
@@ -198,7 +245,7 @@ export default function Chat() {
         source_workspace: sessionWorkspace?.source_workspace_id ?? '—',
         agent_status: agentRunning ? 'running' : 'idle',
         task_status: '—',
-        plan_steps: 0,
+        plan_steps: planSteps,
       }
     : null;
 
