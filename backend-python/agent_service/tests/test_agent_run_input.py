@@ -219,3 +219,87 @@ def test_agent_run_input_emits_run_lifecycle_events() -> None:
     assert [event.sequence_no for event in events] == sorted(
         event.sequence_no for event in events
     )
+
+
+def test_orchestrator_tool_loop_emits_tool_call_result_and_plan_events() -> None:
+    bootstrap_memory_store()
+
+    agent_id = next(agent.agent_id for agent in STORE.agents.values() if agent.agent_kind == "orchestrator")
+    session = _create_active_session()
+    create_response = client.post(
+        "/agent-runs",
+        json={
+            "agent_id": str(agent_id),
+            "session_id": str(session.session_id),
+            "workspace_id": str(uuid4()),
+            "metadata": {},
+        },
+    )
+    run_id = UUID(create_response.json()["run_id"])
+
+    plan_call = {
+        "id": "call-1",
+        "function": {
+            "name": "plan_tool",
+            "arguments": (
+                '{"plan": {"title": "重构登录", "goal": "拆分登录模块", '
+                '"summary": "分三步", "steps": ['
+                '{"step_id": "s1", "content": "梳理现状", "status": "pending", "priority": "high"}'
+                "]}}"
+            ),
+        },
+    }
+
+    # 第一轮：带工具思考文字 + plan_tool 调用；第二轮：无工具调用，收尾
+    responses = [
+        SimpleNamespace(content="我先拟个计划", tool_calls=[plan_call], raw={}),
+        SimpleNamespace(content="计划已生成", tool_calls=[], raw={}),
+    ]
+
+    def _fake_execute(runtime_bundle, request):
+        return responses.pop(0)
+
+    service = AgentRunInputService(
+        agent_run_repository=AgentRunRepository(),
+        agent_repository=AgentRepository(),
+        input_event_repository=InputEventRepository(),
+    )
+    service.executor_factory = lambda runtime: SimpleNamespace(execute=_fake_execute)
+
+    service.input(
+        run_id=run_id,
+        payload=AgentRunInputRequest(
+            input_id=uuid4(),
+            type="user_input",
+            payload={"content": "帮我规划重构登录模块"},
+            idempotency_key=str(uuid4()),
+        ),
+    )
+
+    run = AgentRunRepository().get_by_id(run_id)
+    assert run is not None
+    events = DomainEventRepository().list_by_session_id(run.session_id)
+    event_types = [event.event_type for event in events]
+
+    assert "agent.tool_call" in event_types
+    assert "agent.tool_result" in event_types
+    assert "plan.updated" in event_types
+
+    tool_call = next(e for e in events if e.event_type == "agent.tool_call")
+    assert tool_call.payload["tool_name"] == "plan_tool"
+    assert tool_call.payload["tool_call_id"] == "call-1"
+    assert isinstance(tool_call.payload["arguments"], dict)
+
+    tool_result = next(e for e in events if e.event_type == "agent.tool_result")
+    assert tool_result.payload["tool_name"] == "plan_tool"
+
+    plan_event = next(e for e in events if e.event_type == "plan.updated")
+    assert plan_event.payload["title"] == "重构登录"
+    assert len(plan_event.payload["steps"]) == 1
+
+    # 中间轮的思考文字也作为 assistant 气泡推出
+    assert any(
+        e.event_type == "session.message.appended"
+        and e.payload.get("content") == "我先拟个计划"
+        for e in events
+    )

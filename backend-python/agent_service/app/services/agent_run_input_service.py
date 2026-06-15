@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from uuid import UUID, uuid4
 
 from agent_service.app.models.domain_event import DomainEventModel
@@ -170,6 +172,78 @@ class AgentRunInputService:
             payload={"run_id": str(runtime_bundle.agent_run.run_id), "status": status},
         )
 
+    def _emit_tool_call(self, runtime_bundle, tool_call: dict) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
+        raw_args = function.get("arguments")
+        try:
+            arguments = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+        except (ValueError, TypeError):
+            arguments = {"_raw": raw_args}
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="agent.tool_call",
+            event_scope="main_timeline",
+            payload={
+                "tool_name": function.get("name", ""),
+                "tool_call_id": tool_call.get("id", "") if isinstance(tool_call, dict) else "",
+                "arguments": arguments,
+            },
+        )
+
+    def _emit_tool_result(self, runtime_bundle, item: dict) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        result = item.get("result")
+        # 结果可能是 pydantic 模型/对象，统一转成可 JSON 序列化的形态
+        if hasattr(result, "model_dump"):
+            result_payload = result.model_dump(mode="json")
+        elif isinstance(result, (dict, list, str, int, float, bool)) or result is None:
+            result_payload = result
+        else:
+            result_payload = str(result)
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="agent.tool_result",
+            event_scope="main_timeline",
+            payload={
+                "tool_name": item.get("name", ""),
+                "tool_call_id": item.get("tool_call_id", ""),
+                "result": result_payload,
+            },
+        )
+
+    def _emit_plan_updated(self, runtime_bundle) -> None:
+        session_id = runtime_bundle.agent_run.session_id
+        if session_id is None:
+            return
+        plan = self.plan_repository.get_by_run_id(runtime_bundle.agent_run.run_id)
+        if plan is None:
+            return
+        self.domain_event_emitter.emit(
+            session_id=session_id,
+            session_workspace_id=runtime_bundle.agent_run.workspace_id,
+            run_id=runtime_bundle.agent_run.run_id,
+            event_type="plan.updated",
+            event_scope="main_timeline",
+            payload={
+                "plan_id": str(plan.plan_id),
+                "title": plan.title,
+                "goal": plan.goal,
+                "status": plan.status,
+                "summary": plan.summary,
+                "steps": plan.steps,
+                "file_path": plan.file_path,
+            },
+        )
+
     def _prepare_run_status(self, runtime_bundle, input_event: InputEventModel) -> None:
         updated_run = None
         if self._is_worker_run(runtime_bundle) and input_event.type.value == "user_input":
@@ -252,10 +326,24 @@ class AgentRunInputService:
             if not current_response.tool_calls:
                 return current_response
 
+            # 本轮工具调用前，若 LLM 先产出了一段思考/说明文字，作为独立气泡推出
+            if current_response.content and current_response.content.strip():
+                self._emit_agent_reply(runtime_bundle, current_response)
+
+            # 每个工具调用单独 emit，前端时间线内联展示
+            for tool_call in current_response.tool_calls:
+                self._emit_tool_call(runtime_bundle, tool_call)
+
             tool_results = runtime_bundle.tool_registry.dispatch(runtime_bundle, current_response.tool_calls)
             refreshed_run = self.agent_run_repository.get_by_id(runtime_bundle.agent_run.run_id)
             if refreshed_run is not None:
                 runtime_bundle.agent_run = refreshed_run
+
+            # 每个工具结果 emit；plan_tool 额外 emit plan.updated 带完整步骤
+            for item in tool_results:
+                self._emit_tool_result(runtime_bundle, item)
+                if item.get("name") == "plan_tool":
+                    self._emit_plan_updated(runtime_bundle)
 
             messages = list(current_request.messages)
             if current_response.content:
