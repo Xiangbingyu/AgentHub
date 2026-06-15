@@ -192,3 +192,86 @@ def test_runtime_assembler_can_build_runtime_from_run_id() -> None:
     assert [item["name"] for item in runtime.tool_config["tools"]] == ["plan_tool", "delegate_tool", "bash_tool"]
     assert runtime.instruction_view is not None
     assert runtime.tool_view is not None
+
+
+class _StubSessionWorkspaceRepository:
+    """按 workspace_id 返回预置 root_path；查不到返回 None。"""
+
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def get_by_id(self, workspace_id):
+        return self._mapping.get(workspace_id)
+
+
+def test_runtime_assembler_resolves_workspace_root_from_session_workspace(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    workspace_id = uuid4()
+    session_root = tmp_path / "session-ws"
+    session_root.mkdir()
+    stub_repo = _StubSessionWorkspaceRepository(
+        {workspace_id: SimpleNamespace(root_path=str(session_root))}
+    )
+
+    assembler = RuntimeAssembler(
+        plan_repository=PlanRepository(),
+        # 兜底路径故意指向别处，确认优先用 session workspace 的 root_path
+        workspace_resolver=WorkspaceResolver(
+            Settings(test_workspace_path="E:/Github/AgentHub-weon/backend-python")
+        ),
+        session_workspace_repository=stub_repo,
+    )
+    agent_id = uuid4()
+    run_id = uuid4()
+
+    runtime = assembler.assemble(
+        AgentRunModel(
+            run_id=run_id,
+            agent_id=agent_id,
+            agent_kind="worker",
+            workspace_id=workspace_id,
+            root_run_id=run_id,
+        ),
+        AgentModel(
+            agent_id=agent_id,
+            agent_name="Worker",
+            agent_kind="worker",
+            tool_config={"tools": [{"name": "bash_tool"}], "auto_tool_choice": True},
+        ),
+    )
+
+    assert runtime.workspace_root == str(session_root)
+    assert runtime.runtime_snapshot["workspace_root"] == str(session_root)
+
+
+def test_runtime_assembler_falls_back_when_session_workspace_missing(tmp_path) -> None:
+    # workspace_id 查不到 → 回退 TEST_WORKSPACE_PATH，不报错
+    stub_repo = _StubSessionWorkspaceRepository({})
+    assembler = RuntimeAssembler(
+        plan_repository=PlanRepository(),
+        workspace_resolver=WorkspaceResolver(
+            Settings(test_workspace_path="E:/Github/AgentHub-weon/backend-python")
+        ),
+        session_workspace_repository=stub_repo,
+    )
+    agent_id = uuid4()
+    run_id = uuid4()
+
+    runtime = assembler.assemble(
+        AgentRunModel(
+            run_id=run_id,
+            agent_id=agent_id,
+            agent_kind="worker",
+            workspace_id=uuid4(),
+            root_run_id=run_id,
+        ),
+        AgentModel(
+            agent_id=agent_id,
+            agent_name="Worker",
+            agent_kind="worker",
+            tool_config={"tools": [{"name": "bash_tool"}], "auto_tool_choice": True},
+        ),
+    )
+
+    assert runtime.workspace_root.endswith("backend-python")

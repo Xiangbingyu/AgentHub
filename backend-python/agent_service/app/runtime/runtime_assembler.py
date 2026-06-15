@@ -9,6 +9,7 @@ from agent_service.app.models.agent_run import AgentRunModel
 from agent_service.app.repositories.agent_repository import AgentRepository
 from agent_service.app.repositories.agent_run_repository import AgentRunRepository
 from agent_service.app.repositories.plan_repository import PlanRepository
+from agent_service.app.repositories.session_workspace_repository import SessionWorkspaceRepository
 from agent_service.app.runtime.instruction.instruction_resolver import InstructionResolver
 from agent_service.app.runtime.mcp.resolver import McpRuntimeResolver
 from agent_service.app.runtime.policy.executor_config_resolver import ExecutorConfigResolver
@@ -67,6 +68,7 @@ class RuntimeAssembler:
         tool_config_resolver: ToolConfigResolver | None = None,
         skill_runtime_resolver: SkillRuntimeResolver | None = None,
         mcp_runtime_resolver: McpRuntimeResolver | None = None,
+        session_workspace_repository: SessionWorkspaceRepository | None = None,
     ) -> None:
         self.agent_run_repository = agent_run_repository
         self.agent_repository = agent_repository
@@ -79,6 +81,9 @@ class RuntimeAssembler:
         self.tool_config_resolver = tool_config_resolver or ToolConfigResolver()
         self.skill_runtime_resolver = skill_runtime_resolver or SkillRuntimeResolver()
         self.mcp_runtime_resolver = mcp_runtime_resolver or McpRuntimeResolver()
+        self.session_workspace_repository = (
+            session_workspace_repository or SessionWorkspaceRepository()
+        )
 
     def resolve(self, run_id: UUID) -> RuntimeContext:
         if self.agent_run_repository is None or self.agent_repository is None:
@@ -100,6 +105,10 @@ class RuntimeAssembler:
 
     def assemble(self, agent_run: AgentRunModel, agent: AgentModel) -> RuntimeBundle:
         runtime_snapshot = self.runtime_snapshot_resolver.resolve(agent_run, agent)
+        # 把 run 绑定的 session workspace 磁盘路径注入 snapshot，使 workspace_root
+        # 解析到该 session 自己的目录（plan_tool 等据此写 .AgentHub/plans/）。
+        # 查不到时不写，交由 WorkspaceResolver 回退到 TEST_WORKSPACE_PATH。
+        self._inject_session_workspace_root(agent_run, runtime_snapshot)
         workspace_root = self.workspace_resolver.resolve(runtime_snapshot)
         role = runtime_snapshot["role"]
         executor_config = self.executor_config_resolver.resolve(runtime_snapshot)
@@ -135,3 +144,13 @@ class RuntimeAssembler:
         runtime_bundle.instruction_view = self.instruction_resolver.resolve(runtime_bundle)
         runtime_bundle.tool_view = self.tool_resolver.resolve(runtime_bundle)
         return runtime_bundle
+
+    def _inject_session_workspace_root(
+        self, agent_run: AgentRunModel, runtime_snapshot: dict[str, Any]
+    ) -> None:
+        # snapshot 已显式带 workspace_root（如测试预置）则尊重，不覆盖。
+        if runtime_snapshot.get("workspace_root"):
+            return
+        workspace = self.session_workspace_repository.get_by_id(agent_run.workspace_id)
+        if workspace is not None and workspace.root_path:
+            runtime_snapshot["workspace_root"] = workspace.root_path
