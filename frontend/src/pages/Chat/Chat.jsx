@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import SessionList from '../../components/SessionList/SessionList';
 import ChatPanel from '../../components/ChatPanel/ChatPanel';
 import RuntimePanel from '../../components/RuntimePanel/RuntimePanel';
 import Modal from '../../components/Modal/Modal';
 import useSessionStream from '../../hooks/useSessionStream';
 import {
-  listSessions,
-  getSessionPage,
-  postSessionMessage,
-  listSourceWorkspaces,
-  createSessionFromSource,
-} from '../../utils/api';
+  useListSessionsQuery,
+  useGetSessionPageQuery,
+  useListSourceWorkspacesQuery,
+  usePostSessionMessageMutation,
+  useCreateSessionFromSourceMutation,
+} from '../../store/api';
 import './Chat.css';
 
 const RUNTIME_PANEL_DEFAULT_WIDTH = 360;
@@ -36,112 +36,96 @@ function eventToMessage(event) {
 }
 
 export default function Chat() {
-  const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [sessionWorkspace, setSessionWorkspace] = useState(null);
-  const [sending, setSending] = useState(false);
+  // 用户显式选中的 session；未选时回退到列表第一条（派生，不存 state）
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  // SSE 实时回流的消息缓冲（与 query 历史合并），切 session 时清空
+  const [liveBuffer, setLiveBuffer] = useState([]);
+  const [bufferedSessionId, setBufferedSessionId] = useState('');
   const [runtimeWidth, setRuntimeWidth] = useState(RUNTIME_PANEL_DEFAULT_WIDTH);
   const [runtimeCollapsed, setRuntimeCollapsed] = useState(false);
   const containerRef = useRef(null);
 
   // 建 session 弹窗状态
   const [createOpen, setCreateOpen] = useState(false);
-  const [sources, setSources] = useState([]);
   const [newTitle, setNewTitle] = useState('');
   const [newSourceId, setNewSourceId] = useState('');
-  const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
-  function refreshSessions(selectId) {
-    return listSessions()
-      .then((rows) => {
-        setSessions(rows);
-        if (selectId) {
-          setActiveSessionId(selectId);
-        } else {
-          setActiveSessionId((current) => current || rows[0]?.session_id || '');
-        }
-        return rows;
-      })
-      .catch(() => setSessions([]));
+  // 会话列表：缓存命中立即渲染，后台 refetch
+  const { data: sessions = [] } = useListSessionsQuery();
+  // 建 session 弹窗打开时才拉 source 列表
+  const { data: sources = [] } = useListSourceWorkspacesQuery(undefined, { skip: !createOpen });
+
+  const activeSessionId = selectedSessionId || sessions[0]?.session_id || '';
+
+  // 选中 session 的历史 + workspace 快照
+  const { data: sessionPage } = useGetSessionPageQuery(activeSessionId, {
+    skip: !activeSessionId,
+  });
+
+  const [postMessage, { isLoading: sending }] = usePostSessionMessageMutation();
+  const [createSession, { isLoading: creating }] = useCreateSessionFromSourceMutation();
+
+  // 切换 session 时清空上一会话的实时缓冲（渲染期同步，避免 effect 级联）
+  if (bufferedSessionId !== activeSessionId) {
+    setBufferedSessionId(activeSessionId);
+    setLiveBuffer([]);
   }
 
-  // 应用启动：拉会话列表
-  useEffect(() => {
-    refreshSessions();
-  }, []);
+  // 弹窗的默认 source 选择（派生：未选则取第一条）
+  const effectiveSourceId = newSourceId || sources[0]?.source_workspace_id || '';
 
   function openCreateModal() {
     setCreateError('');
     setNewTitle('');
+    setNewSourceId('');
     setCreateOpen(true);
-    listSourceWorkspaces()
-      .then((rows) => {
-        setSources(rows);
-        setNewSourceId((current) => current || rows[0]?.source_workspace_id || '');
-      })
-      .catch(() => setSources([]));
   }
 
   function handleCreateSession() {
-    if (!newSourceId || !newTitle.trim()) {
+    if (!effectiveSourceId || !newTitle.trim()) {
       setCreateError('请填写标题并选择一个 source workspace');
       return;
     }
-    setCreating(true);
     setCreateError('');
-    createSessionFromSource({ source_workspace_id: newSourceId, title: newTitle.trim() })
+    createSession({ source_workspace_id: effectiveSourceId, title: newTitle.trim() })
+      .unwrap()
       .then((session) => {
         setCreateOpen(false);
-        return refreshSessions(session.session_id);
+        setSelectedSessionId(session.session_id);
       })
-      .catch((err) => setCreateError(err.message || '创建失败'))
-      .finally(() => setCreating(false));
+      .catch((err) => setCreateError(err?.data?.detail || err?.error || '创建失败'));
   }
 
-  // 选中 session：拉历史 + workspace 快照
-  useEffect(() => {
-    if (!activeSessionId) {
-      return undefined;
-    }
-    let cancelled = false;
-    getSessionPage(activeSessionId)
-      .then((page) => {
-        if (cancelled) {
-          return;
-        }
-        const history = (page.main_timeline ?? [])
-          .filter((event) => event.event_type === 'session.message.appended')
-          .map(eventToMessage);
-        setMessages(history);
-        setSessionWorkspace(page.session_workspace ?? null);
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        setMessages([]);
-        setSessionWorkspace(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSessionId]);
+  const sessionWorkspace = sessionPage?.session_workspace ?? null;
 
-  // SSE 实时：按 sequence_no 去重后追加 main_timeline 消息
+  // 历史消息（来自 query）与实时缓冲（来自 SSE）合并、按 sequence_no 去重排序
+  const messages = useMemo(() => {
+    const history = (sessionPage?.main_timeline ?? [])
+      .filter((event) => event.event_type === 'session.message.appended')
+      .map(eventToMessage);
+    const merged = [...history];
+    const seen = new Set(history.map((m) => m.sequence_no));
+    for (const m of liveBuffer) {
+      if (!seen.has(m.sequence_no)) {
+        merged.push(m);
+        seen.add(m.sequence_no);
+      }
+    }
+    return merged.sort((a, b) => (a.sequence_no ?? 0) - (b.sequence_no ?? 0));
+  }, [sessionPage, liveBuffer]);
+
+  // SSE 实时：把 main_timeline 消息推进实时缓冲（去重在 messages 合并时统一处理）
   const handleStreamEvent = useCallback((event) => {
     if (event.event_type !== 'session.message.appended') {
       return;
     }
     const incoming = eventToMessage(event);
-    setMessages((current) => {
+    setLiveBuffer((current) => {
       if (current.some((m) => m.sequence_no === incoming.sequence_no)) {
         return current;
       }
-      return [...current, incoming].sort(
-        (a, b) => (a.sequence_no ?? 0) - (b.sequence_no ?? 0),
-      );
+      return [...current, incoming];
     });
   }, []);
 
@@ -151,11 +135,8 @@ export default function Chat() {
     if (!activeSessionId) {
       return;
     }
-    setSending(true);
-    postSessionMessage(activeSessionId, content)
-      .catch(() => undefined)
-      .finally(() => setSending(false));
     // agent 回复经 SSE 回流追加；用户消息也由后端落 main_timeline 事件回流
+    postMessage({ sessionId: activeSessionId, content }).unwrap().catch(() => undefined);
   }
 
   const activeSession =
@@ -211,7 +192,7 @@ export default function Chat() {
       <SessionList
         sessions={sessions}
         activeSessionId={activeSessionId}
-        onSelectSession={setActiveSessionId}
+        onSelectSession={setSelectedSessionId}
         onCreateSession={openCreateModal}
       />
       <div className="chat-page-center">
@@ -257,7 +238,7 @@ export default function Chat() {
           <label htmlFor="new-session-source">Source Workspace（将自动派生隔离副本）</label>
           <select
             id="new-session-source"
-            value={newSourceId}
+            value={effectiveSourceId}
             onChange={(event) => setNewSourceId(event.target.value)}
           >
             {sources.length === 0 ? <option value="">（暂无，请先在 Workspace 页创建）</option> : null}

@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import WorkspaceBrowser from '../../components/WorkspaceBrowser/WorkspaceBrowser';
 import WorkspaceDetailPanel from '../../components/WorkspaceDetailPanel/WorkspaceDetailPanel';
 import Modal from '../../components/Modal/Modal';
 import {
-  listSourceWorkspaces,
-  getWorkspacePage,
-  getWorkspaceTree,
-  createSourceWorkspace,
-} from '../../utils/api';
+  useListSourceWorkspacesQuery,
+  useGetWorkspacePageQuery,
+  useLazyGetWorkspaceTreeQuery,
+  useCreateSourceWorkspaceMutation,
+} from '../../store/api';
 import './Workspace.css';
 
 // 后端 tree 节点（{type,name,path}）→ 浏览器节点（带唯一 id 与 children 占位）
@@ -21,103 +21,108 @@ function toFileNode(sourceId, entry) {
   };
 }
 
-// 在 source 树中按 id 注入某目录的子节点（不可变更新）
-function injectChildren(sources, sourceId, dirId, children) {
-  function walk(nodes) {
-    return nodes.map((node) => {
-      if (node.id === dirId) {
-        return { ...node, children };
-      }
-      if (node.children) {
-        return { ...node, children: walk(node.children) };
-      }
-      return node;
-    });
-  }
-  return sources.map((source) =>
-    source.source_workspace_id === sourceId
-      ? { ...source, files: walk(source.files ?? []) }
-      : source,
-  );
+// 按 nodeId→children 映射，递归注入按需展开的子节点（不可变更新）
+function injectByMap(nodes, childrenMap) {
+  return nodes.map((node) => {
+    const injected = childrenMap[node.id];
+    if (injected) {
+      return { ...node, children: injectByMap(injected, childrenMap) };
+    }
+    if (node.children) {
+      return { ...node, children: injectByMap(node.children, childrenMap) };
+    }
+    return node;
+  });
 }
 
 export default function Workspace() {
-  const [sources, setSources] = useState([]);
+  // 用户显式选中的资源（source / 文件节点 / session workspace）
   const [selectedResourceId, setSelectedResourceId] = useState('');
-  const [detailsById, setDetailsById] = useState({});
+  // 用户显式切换的活动 source；未选时回退第一条（派生）
+  const [pickedSourceId, setPickedSourceId] = useState('');
+  // 目录按需展开注入的子节点：nodeId → children[]
+  const [expandedChildren, setExpandedChildren] = useState({});
+  const [trackedSourceId, setTrackedSourceId] = useState('');
+  const [fileDetails, setFileDetails] = useState({});
 
   // 建 source workspace 弹窗状态
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
-  const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
-  const loadSources = async () => {
-    let rows;
-    try {
-      rows = await listSourceWorkspaces();
-    } catch {
-      setSources([]);
-      return [];
-    }
-    const enriched = await Promise.all(
-      rows.map(async (source) => {
-        const sourceId = source.source_workspace_id;
-        let page;
-        try {
-          page = await getWorkspacePage(sourceId);
-        } catch {
-          page = {};
-        }
-        return {
-          ...source,
-          files: (page.tree ?? []).map((entry) => toFileNode(sourceId, entry)),
-          session_workspaces: page.session_workspaces ?? [],
-        };
-      }),
-    );
-    setSources(enriched);
-    setSelectedResourceId((current) => current || enriched[0]?.source_workspace_id || '');
-    const details = {};
-    enriched.forEach((source) => {
-      details[source.source_workspace_id] = {
-        title: source.name,
+  // source 列表：缓存命中立即出框架，后台 refetch
+  const { data: sourceRows = [] } = useListSourceWorkspacesQuery();
+
+  // 活动 source（派生：未选则取第一条）
+  const activeSourceId = pickedSourceId || sourceRows[0]?.source_workspace_id || '';
+
+  // 只拉选中 source 的 page（tree + 派生 session workspaces）
+  const { data: activePage } = useGetWorkspacePageQuery(activeSourceId, {
+    skip: !activeSourceId,
+  });
+  const [triggerTree] = useLazyGetWorkspaceTreeQuery();
+  const [createSource, { isLoading: creating }] = useCreateSourceWorkspaceMutation();
+
+  // 切换 source 时清空上一个 source 的展开缓存（渲染期同步，避免 effect 级联）
+  if (trackedSourceId !== activeSourceId) {
+    setTrackedSourceId(activeSourceId);
+    setExpandedChildren({});
+  }
+
+  const effectiveSelectedId = selectedResourceId || activeSourceId;
+
+  // 传给 WorkspaceBrowser 的 sources：仅活动 source 带 files/session_workspaces
+  const sources = useMemo(() => {
+    return sourceRows.map((source) => {
+      if (source.source_workspace_id !== activeSourceId) {
+        return { ...source, files: [], session_workspaces: [] };
+      }
+      const baseFiles = (activePage?.tree ?? []).map((entry) =>
+        toFileNode(source.source_workspace_id, entry),
+      );
+      const files = injectByMap(baseFiles, expandedChildren);
+      return {
+        ...source,
+        files,
+        session_workspaces: activePage?.session_workspaces ?? [],
+      };
+    });
+  }, [sourceRows, activeSourceId, activePage, expandedChildren]);
+
+  const detailsById = useMemo(() => {
+    const map = {};
+    const active = sourceRows.find((s) => s.source_workspace_id === activeSourceId);
+    if (active) {
+      map[active.source_workspace_id] = {
+        title: active.name,
         type_label: 'Source Workspace · 真源',
-        path: source.root_path,
-        description: `状态：${source.status}`,
-        bindings: [`派生 ${source.session_workspaces.length} 个 session workspace`],
+        path: active.root_path,
+        description: `状态：${active.status}`,
+        bindings: [`派生 ${activePage?.session_workspaces?.length ?? 0} 个 session workspace`],
         preview_kind: 'note',
         preview: '选择文件查看路径与详情。',
       };
-    });
-    setDetailsById((current) => ({ ...details, ...current }));
-    return enriched;
-  };
-
-  // 启动：拉 source workspace 列表 + 每个 source 的根层 tree + 派生 session workspaces
-  useEffect(() => {
-    // loadSources 的 setState 均在 await 之后异步触发，非同步级联渲染
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadSources();
-  }, []);
+    }
+    return { ...map, ...fileDetails };
+  }, [sourceRows, activeSourceId, activePage, fileDetails]);
 
   function handleCreateSource() {
     if (!newName.trim() || !newPath.trim()) {
       setCreateError('请填写名称与本地目录路径');
       return;
     }
-    setCreating(true);
     setCreateError('');
-    createSourceWorkspace({ name: newName.trim(), root_path: newPath.trim() })
+    createSource({ name: newName.trim(), root_path: newPath.trim() })
+      .unwrap()
       .then(() => {
         setCreateOpen(false);
         setNewName('');
         setNewPath('');
-        return loadSources();
       })
-      .catch((err) => setCreateError(err.message || '创建失败，请确认目录存在'))
-      .finally(() => setCreating(false));
+      .catch((err) =>
+        setCreateError(err?.data?.detail || err?.error || '创建失败，请确认目录存在'),
+      );
   }
 
   // 目录展开：按需拉该层 tree 并注入 children
@@ -127,22 +132,25 @@ export default function Workspace() {
         return;
       }
       const [sourceId] = node.id.split(':');
-      getWorkspaceTree(sourceId, node.path)
+      triggerTree({ sourceId, path: node.path })
+        .unwrap()
         .then((entries) => {
           const children = entries.map((entry) => toFileNode(sourceId, entry));
-          setSources((current) =>
-            injectChildren(current, sourceId, node.id, children),
-          );
+          setExpandedChildren((current) => ({ ...current, [node.id]: children }));
         })
         .catch(() => undefined);
     },
-    [],
+    [triggerTree],
   );
 
-  // 选中文件/节点：构造一个最小详情
+  // 选中文件/节点：source 行切换活动 source，文件节点构造最小详情
   function handleSelectResource(id) {
     setSelectedResourceId(id);
-    setDetailsById((current) => {
+    if (sourceRows.some((s) => s.source_workspace_id === id)) {
+      setPickedSourceId(id);
+      return;
+    }
+    setFileDetails((current) => {
       if (current[id]) {
         return current;
       }
@@ -162,13 +170,13 @@ export default function Workspace() {
     });
   }
 
-  const detail = detailsById[selectedResourceId] ?? null;
+  const detail = detailsById[effectiveSelectedId] ?? null;
 
   return (
     <div className="workspace-page">
       <WorkspaceBrowser
         sourceWorkspaces={sources}
-        selectedResourceId={selectedResourceId}
+        selectedResourceId={effectiveSelectedId}
         onSelectResource={handleSelectResource}
         onExpandDirectory={handleExpandDirectory}
         onCreateSource={() => {
