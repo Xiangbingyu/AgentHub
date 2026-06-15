@@ -6,14 +6,17 @@ import {
   useListSourceWorkspacesQuery,
   useGetWorkspacePageQuery,
   useLazyGetWorkspaceTreeQuery,
+  useLazyGetSessionWorkspaceTreeQuery,
   useCreateSourceWorkspaceMutation,
 } from '../../store/api';
 import './Workspace.css';
 
 // 后端 tree 节点（{type,name,path}）→ 浏览器节点（带唯一 id 与 children 占位）
-function toFileNode(sourceId, entry) {
+// ownerId 前缀区分来源：source workspace 用其 id；session workspace 用 "sw:<id>"，
+// 以便目录按需展开时路由到正确的 tree 端点。
+function toFileNode(ownerId, entry) {
   return {
-    id: `${sourceId}:${entry.path}`,
+    id: `${ownerId}:${entry.path}`,
     type: entry.type,
     name: entry.name,
     path: entry.path,
@@ -42,6 +45,8 @@ export default function Workspace() {
   const [pickedSourceId, setPickedSourceId] = useState('');
   // 目录按需展开注入的子节点：nodeId → children[]
   const [expandedChildren, setExpandedChildren] = useState({});
+  // 各 session workspace 根层 tree：sessionWorkspaceId → entries[]
+  const [sessionRootTrees, setSessionRootTrees] = useState({});
   const [trackedSourceId, setTrackedSourceId] = useState('');
   const [fileDetails, setFileDetails] = useState({});
 
@@ -62,12 +67,14 @@ export default function Workspace() {
     skip: !activeSourceId,
   });
   const [triggerTree] = useLazyGetWorkspaceTreeQuery();
+  const [triggerSessionTree] = useLazyGetSessionWorkspaceTreeQuery();
   const [createSource, { isLoading: creating }] = useCreateSourceWorkspaceMutation();
 
   // 切换 source 时清空上一个 source 的展开缓存（渲染期同步，避免 effect 级联）
   if (trackedSourceId !== activeSourceId) {
     setTrackedSourceId(activeSourceId);
     setExpandedChildren({});
+    setSessionRootTrees({});
   }
 
   const effectiveSelectedId = selectedResourceId || activeSourceId;
@@ -82,13 +89,24 @@ export default function Workspace() {
         toFileNode(source.source_workspace_id, entry),
       );
       const files = injectByMap(baseFiles, expandedChildren);
+      // 每个 session workspace 注入其根层 tree（已加载的）+ 按需展开的子节点
+      const sessionWorkspaces = (activePage?.session_workspaces ?? []).map((sw) => {
+        const rootEntries = sessionRootTrees[sw.session_workspace_id];
+        if (!rootEntries) {
+          return { ...sw, files: [] };
+        }
+        const swFiles = rootEntries.map((entry) =>
+          toFileNode(`sw:${sw.session_workspace_id}`, entry),
+        );
+        return { ...sw, files: injectByMap(swFiles, expandedChildren) };
+      });
       return {
         ...source,
         files,
-        session_workspaces: activePage?.session_workspaces ?? [],
+        session_workspaces: sessionWorkspaces,
       };
     });
-  }, [sourceRows, activeSourceId, activePage, expandedChildren]);
+  }, [sourceRows, activeSourceId, activePage, expandedChildren, sessionRootTrees]);
 
   const detailsById = useMemo(() => {
     const map = {};
@@ -125,22 +143,45 @@ export default function Workspace() {
       );
   }
 
-  // 目录展开：按需拉该层 tree 并注入 children
+  // 目录展开：按需拉该层 tree 并注入 children。
+  // 节点 id 形如 "<sourceId>:<path>" 或 "sw:<sessionWorkspaceId>:<path>"，
+  // 据前缀路由到 source / session 的 tree 端点。
   const handleExpandDirectory = useCallback(
     (node) => {
       if (node.children) {
         return;
       }
-      const [sourceId] = node.id.split(':');
-      triggerTree({ sourceId, path: node.path })
+      const parts = node.id.split(':');
+      const isSession = parts[0] === 'sw';
+      const fetcher = isSession
+        ? triggerSessionTree({ sessionWorkspaceId: parts[1], path: node.path })
+        : triggerTree({ sourceId: parts[0], path: node.path });
+      const ownerId = isSession ? `sw:${parts[1]}` : parts[0];
+      fetcher
         .unwrap()
         .then((entries) => {
-          const children = entries.map((entry) => toFileNode(sourceId, entry));
+          const children = entries.map((entry) => toFileNode(ownerId, entry));
           setExpandedChildren((current) => ({ ...current, [node.id]: children }));
         })
         .catch(() => undefined);
     },
-    [triggerTree],
+    [triggerTree, triggerSessionTree],
+  );
+
+  // 展开某个 session workspace：拉它的根层 tree（含 .AgentHub/plans 等副本内容）
+  const handleExpandSessionWorkspace = useCallback(
+    (sessionWorkspaceId) => {
+      if (sessionRootTrees[sessionWorkspaceId]) {
+        return;
+      }
+      triggerSessionTree({ sessionWorkspaceId, path: '.' })
+        .unwrap()
+        .then((entries) => {
+          setSessionRootTrees((current) => ({ ...current, [sessionWorkspaceId]: entries }));
+        })
+        .catch(() => undefined);
+    },
+    [triggerSessionTree, sessionRootTrees],
   );
 
   // 选中文件/节点：source 行切换活动 source，文件节点构造最小详情
@@ -179,6 +220,7 @@ export default function Workspace() {
         selectedResourceId={effectiveSelectedId}
         onSelectResource={handleSelectResource}
         onExpandDirectory={handleExpandDirectory}
+        onExpandSessionWorkspace={handleExpandSessionWorkspace}
         onCreateSource={() => {
           setCreateError('');
           setCreateOpen(true);

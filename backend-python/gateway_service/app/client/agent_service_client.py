@@ -4,12 +4,26 @@ import httpx
 
 from gateway_service.app.config import get_settings
 
+_SHARED_CLIENTS: dict[tuple[str, float], httpx.Client] = {}
+
+
+def _get_shared_client(base_url: str, timeout: float) -> httpx.Client:
+    key = (base_url, timeout)
+    client = _SHARED_CLIENTS.get(key)
+    if client is None:
+        client = httpx.Client(
+            base_url=base_url,
+            timeout=timeout,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=40),
+        )
+        _SHARED_CLIENTS[key] = client
+    return client
+
 
 class AgentServiceClient:
     """gateway → agent_service 的 HTTP 客户端。
 
-    每次调用打开一次连接（沿用 agent_service repository 的 per-call 连接风格），
-    `_client` 工厂便于测试替换。
+    默认复用共享 httpx.Client 连接池；`_client` 工厂保留给测试替换。
     """
 
     def __init__(self, base_url: str | None = None, timeout: float = 10.0) -> None:
@@ -17,19 +31,17 @@ class AgentServiceClient:
         self._timeout = timeout
 
     def _client(self) -> httpx.Client:
-        return httpx.Client(base_url=self.base_url, timeout=self._timeout)
+        return _get_shared_client(self.base_url, self._timeout)
 
     def _get(self, path: str, params: dict | None = None):
-        with self._client() as client:
-            response = client.get(path, params=params)
-            response.raise_for_status()
-            return response.json()
+        response = self._client().get(path, params=params)
+        response.raise_for_status()
+        return response.json()
 
     def _post(self, path: str, json: dict | None = None):
-        with self._client() as client:
-            response = client.post(path, json=json)
-            response.raise_for_status()
-            return response.json()
+        response = self._client().post(path, json=json)
+        response.raise_for_status()
+        return response.json()
 
     # ---- 读 ----
     def list_session_events(self, session_id: str, since: int = 0) -> list[dict]:
@@ -59,6 +71,11 @@ class AgentServiceClient:
     def get_workspace_tree(self, source_workspace_id: str, path: str = ".") -> list[dict]:
         return self._get(
             f"/source-workspaces/{source_workspace_id}/tree", params={"path": path}
+        )
+
+    def get_session_workspace_tree(self, session_workspace_id: str, path: str = ".") -> list[dict]:
+        return self._get(
+            f"/session-workspaces/{session_workspace_id}/tree", params={"path": path}
         )
 
     def get_agent_run(self, run_id: str) -> dict:

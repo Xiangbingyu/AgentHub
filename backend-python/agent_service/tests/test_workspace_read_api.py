@@ -78,3 +78,37 @@ def test_get_source_workspace_tree(tmp_path: Path) -> None:
     by_name = {item["name"]: item["type"] for item in response.json()}
     assert by_name["src"] == "directory"
     assert by_name["readme.md"] == "file"
+
+
+def test_get_session_workspace_tree(tmp_path: Path) -> None:
+    bootstrap_memory_store()
+    # 模拟 session workspace 副本目录：含 .AgentHub/plans 下的 plan 文件
+    plans_dir = tmp_path / ".AgentHub" / "plans"
+    plans_dir.mkdir(parents=True)
+    (plans_dir / "demo.execution-plan.md").write_text("# plan", encoding="utf-8")
+    sw = SessionWorkspaceRepository().create(
+        SessionWorkspaceModel(
+            session_workspace_id=uuid4(),
+            source_workspace_id=uuid4(),
+            name="branch-tree",
+            root_path=str(tmp_path),
+            status="ready",
+        )
+    )
+
+    # 根层能看到 .AgentHub
+    root_resp = client.get(f"/session-workspaces/{sw.session_workspace_id}/tree", params={"path": "."})
+    assert root_resp.status_code == 200
+    assert any(item["name"] == ".AgentHub" for item in root_resp.json())
+
+    # 逐层进到 plans，能看到新写的 plan 文件
+    plans_resp = client.get(
+        f"/session-workspaces/{sw.session_workspace_id}/tree",
+        params={"path": ".AgentHub/plans"},
+    )
+    assert plans_resp.status_code == 200
+    names = {item["name"] for item in plans_resp.json()}
+    assert "demo.execution-plan.md" in names
+
+    # 未知 session workspace → 404
+    assert client.get(f"/session-workspaces/{uuid4()}/tree").status_code == 404

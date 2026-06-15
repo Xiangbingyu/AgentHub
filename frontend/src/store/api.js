@@ -30,6 +30,12 @@ export const api = createApi({
         return `/source-workspaces/${sourceId}/tree?${search}`;
       },
     }),
+    getSessionWorkspaceTree: builder.query({
+      query: ({ sessionWorkspaceId, path = '.' }) => {
+        const search = new URLSearchParams({ path }).toString();
+        return `/session-workspaces/${sessionWorkspaceId}/tree?${search}`;
+      },
+    }),
 
     // ---- 写 ----
     postSessionMessage: builder.mutation({
@@ -64,6 +70,7 @@ export const {
   useListSourceWorkspacesQuery,
   useGetWorkspacePageQuery,
   useLazyGetWorkspaceTreeQuery,
+  useLazyGetSessionWorkspaceTreeQuery,
   usePostSessionMessageMutation,
   useCreateSessionFromSourceMutation,
   useCreateSourceWorkspaceMutation,

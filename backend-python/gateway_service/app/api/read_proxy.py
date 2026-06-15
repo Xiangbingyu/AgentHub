@@ -20,3 +20,8 @@ def list_source_workspaces():
 @router.get("/source-workspaces/{source_workspace_id}/tree")
 def get_workspace_tree(source_workspace_id: str, path: str = Query(default=".")):
     return AgentServiceClient().get_workspace_tree(source_workspace_id, path=path)
+
+
+@router.get("/session-workspaces/{session_workspace_id}/tree")
+def get_session_workspace_tree(session_workspace_id: str, path: str = Query(default=".")):
+    return AgentServiceClient().get_session_workspace_tree(session_workspace_id, path=path)

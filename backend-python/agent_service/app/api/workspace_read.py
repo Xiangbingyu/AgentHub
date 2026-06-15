@@ -46,3 +46,14 @@ def get_session_workspace(session_workspace_id: UUID):
     if workspace is None:
         raise HTTPException(status_code=404, detail="session workspace not found")
     return workspace
+
+
+@router.get("/session-workspaces/{session_workspace_id}/tree")
+def get_session_workspace_tree(session_workspace_id: UUID, path: str = Query(default=".")):
+    workspace = SessionWorkspaceRepository().get_by_id(session_workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="session workspace not found")
+    try:
+        return list_tree_level(workspace.root_path, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -16,6 +16,7 @@ export default function WorkspaceBrowser({
   selectedResourceId,
   onSelectResource,
   onExpandDirectory,
+  onExpandSessionWorkspace,
   onCreateSource,
 }) {
   const [expandedKeys, setExpandedKeys] = useState(() => {
@@ -187,7 +188,12 @@ export default function WorkspaceBrowser({
                                 <button
                                   type="button"
                                   className="toggle-btn"
-                                  onClick={() => toggleNode(sessionKey)}
+                                  onClick={() => {
+                                    toggleNode(sessionKey);
+                                    if (!isSessionExpanded) {
+                                      onExpandSessionWorkspace?.(sessionWorkspace.session_workspace_id);
+                                    }
+                                  }}
                                   aria-label={`${isSessionExpanded ? '收起' : '展开'} ${sessionWorkspace.name}`}
                                 >
                                   {isSessionExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
