@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Send, Smile, Paperclip, MoreHorizontal } from 'lucide-react';
 import './ChatPanel.css';
 
-export default function ChatPanel({ session, messages, onSendMessage, sending }) {
+export default function ChatPanel({ session, messages, onSendMessage, sending, agentTyping }) {
   const [draft, setDraft] = useState('');
   const messageEndRef = useRef(null);
 
   // 新消息进来时滚动到底部
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, agentTyping]);
 
   if (!session) {
     return (
@@ -51,7 +51,7 @@ export default function ChatPanel({ session, messages, onSendMessage, sending })
       </div>
 
       <div className="chat-messages">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !agentTyping ? (
           <div className="chat-state">还没有消息，开始对话吧。</div>
         ) : (
           messages.map((message) => {
@@ -66,15 +66,27 @@ export default function ChatPanel({ session, messages, onSendMessage, sending })
                 </div>
                 <div className="message-content">
                   <div className="message-name">{message.author}</div>
-                  <div className="message-bubble">
-                    {message.content}
-                    {message.pending ? <span className="stream-cursor">▋</span> : null}
-                  </div>
+                  <div className="message-bubble">{message.content}</div>
                 </div>
               </div>
             );
           })
         )}
+        {agentTyping ? (
+          <div className="message-wrapper receive">
+            <div className="message-avatar" aria-hidden="true">
+              AI
+            </div>
+            <div className="message-content">
+              <div className="message-name">Agent</div>
+              <div className="message-bubble typing-bubble" aria-label="对方正在输入">
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div ref={messageEndRef} />
       </div>
 

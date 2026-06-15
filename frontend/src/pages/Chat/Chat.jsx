@@ -41,6 +41,8 @@ export default function Chat() {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   // SSE 实时回流的消息缓冲（与 query 历史合并），切 session 时清空
   const [liveBuffer, setLiveBuffer] = useState([]);
+  // agent 运行态：由 SSE 的 run.started / run.completed 驱动
+  const [agentRunning, setAgentRunning] = useState(false);
   const [bufferedSessionId, setBufferedSessionId] = useState('');
   const [runtimeWidth, setRuntimeWidth] = useState(RUNTIME_PANEL_DEFAULT_WIDTH);
   const [runtimeCollapsed, setRuntimeCollapsed] = useState(false);
@@ -64,13 +66,14 @@ export default function Chat() {
     skip: !activeSessionId,
   });
 
-  const [postMessage, { isLoading: sending }] = usePostSessionMessageMutation();
+  const [postMessage] = usePostSessionMessageMutation();
   const [createSession, { isLoading: creating }] = useCreateSessionFromSourceMutation();
 
   // 切换 session 时清空上一会话的实时缓冲（渲染期同步，避免 effect 级联）
   if (bufferedSessionId !== activeSessionId) {
     setBufferedSessionId(activeSessionId);
     setLiveBuffer([]);
+    setAgentRunning(false);
   }
 
   // 弹窗的默认 source 选择（派生：未选则取第一条）
@@ -134,12 +137,24 @@ export default function Chat() {
     return [...real, ...pendingOptimistic];
   }, [sessionPage, liveBuffer]);
 
-  // SSE 实时：把 main_timeline 消息推进实时缓冲（去重在 messages 合并时统一处理）
+  // SSE 实时：消息事件进缓冲；run 生命周期事件驱动 agent 运行态。
   const handleStreamEvent = useCallback((event) => {
+    if (event.event_type === 'run.started') {
+      setAgentRunning(true);
+      return;
+    }
+    if (event.event_type === 'run.completed') {
+      setAgentRunning(false);
+      return;
+    }
     if (event.event_type !== 'session.message.appended') {
       return;
     }
     const incoming = eventToMessage(event);
+    // agent 回复到达即视为本轮结束（run.completed 可能稍后才到）
+    if (incoming.role === 'agent') {
+      setAgentRunning(false);
+    }
     setLiveBuffer((current) => {
       if (current.some((m) => m.sequence_no === incoming.sequence_no)) {
         return current;
@@ -154,7 +169,7 @@ export default function Chat() {
     if (!activeSessionId) {
       return;
     }
-    // 乐观回显：立即把用户消息推入缓冲，无需等 SSE 往返
+    // 乐观回显：立即把用户消息推入缓冲（不带 pending，光标不挂在用户气泡上）
     setLiveBuffer((current) => [
       ...current,
       {
@@ -164,9 +179,10 @@ export default function Chat() {
         author: '你',
         content,
         optimistic: true,
-        pending: true,
       },
     ]);
+    // 立即进入运行态，等 SSE 的 run.started/回复再校正
+    setAgentRunning(true);
     // agent 回复经 SSE 回流追加；真实用户事件回流后会顶替上面的乐观项
     postMessage({ sessionId: activeSessionId, content }).unwrap().catch(() => undefined);
   }
@@ -180,7 +196,7 @@ export default function Chat() {
         session_status: activeSession.status,
         session_workspace: sessionWorkspace?.name ?? '—',
         source_workspace: sessionWorkspace?.source_workspace_id ?? '—',
-        agent_status: sending ? 'running' : 'idle',
+        agent_status: agentRunning ? 'running' : 'idle',
         task_status: '—',
         plan_steps: 0,
       }
@@ -232,7 +248,8 @@ export default function Chat() {
           session={activeSession}
           messages={messages}
           onSendMessage={handleSendMessage}
-          sending={sending}
+          sending={agentRunning}
+          agentTyping={agentRunning}
         />
       </div>
       <div
