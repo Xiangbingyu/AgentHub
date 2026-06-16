@@ -8,6 +8,7 @@ dependencies = [
     "agentscope[service]>=2.0.1",
     "fastapi[standard]>=0.115.12",
     "pydantic-settings>=2.9.1",
+    "redis>=6.2.0",
 ]
 
 [project.optional-dependencies]

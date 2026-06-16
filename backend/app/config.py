@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_base_url: str | None = None
     dashscope_api_key: SecretStr | None = None
+    redis_url: str = "redis://127.0.0.1:6382/0"
+    workspace_base_dir: str = "./.AgentHub/workspaces"
+    local_runtime_principal: str = "local-user"
 
 
 @lru_cache
