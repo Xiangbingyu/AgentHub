@@ -29,7 +29,7 @@ class InternalLlmExecutor(AgentExecutor):
         )
 
     def execute(self, runtime: RuntimeBundle, request: LlmRequest) -> LlmResponse:
-        return self.provider.complete(request)
+        return self.provider.complete(request, cancel_event=getattr(runtime, "cancel_event", None))
 
     def complete(self, request: LlmRequest) -> LlmResponse:
         return self.provider.complete(request)

@@ -65,3 +65,38 @@ def test_session_stream_respects_last_event_id(monkeypatch) -> None:
     assert response.status_code == 200
     _ = response.text
     assert seen["since"] == 7
+
+
+def test_session_stream_fetches_events_via_threadpool(monkeypatch) -> None:
+    _fast_polling(monkeypatch)
+    captured = {}
+
+    def _fake_list(self, session_id, since=0):
+        captured["list_called"] = True
+        return []
+
+    async def _fake_run_in_threadpool(func, *args, **kwargs):
+        captured["func"] = func
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "gateway_service.app.client.agent_service_client.AgentServiceClient.list_session_events",
+        _fake_list,
+    )
+    monkeypatch.setattr(session_stream, "run_in_threadpool", _fake_run_in_threadpool, raising=False)
+
+    client = TestClient(create_app())
+    response = client.get("/sessions/sid-1/stream")
+
+    assert response.status_code == 200
+    _ = response.text
+    assert captured["func"].__func__ is _fake_list
+    assert captured["args"] == ("sid-1",)
+    assert captured["kwargs"] == {"since": 0}
+    assert captured["list_called"] is True
+
+
+def test_session_stream_uses_lower_default_idle_interval() -> None:
+    assert session_stream.STREAM_IDLE_INTERVAL == 0.8

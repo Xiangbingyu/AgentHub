@@ -26,7 +26,6 @@ class DomainEventEmitter:
         run_id: UUID | None = None,
         subtask_id: UUID | None = None,
     ) -> DomainEventModel:
-        sequence_no = self._repository.next_sequence_no(session_id)
         event = DomainEventModel(
             event_id=uuid4(),
             session_id=session_id,
@@ -36,6 +35,6 @@ class DomainEventEmitter:
             event_type=event_type,
             event_scope=event_scope,
             payload=payload,
-            sequence_no=sequence_no,
+            sequence_no=0,
         )
-        return self._repository.create(event)
+        return self._repository.append(event)

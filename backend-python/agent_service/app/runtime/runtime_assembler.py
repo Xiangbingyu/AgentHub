@@ -48,6 +48,9 @@ class RuntimeBundle:
     tool_view: Any | None = None
     prompt_view: Any | None = None
     runtime_snapshot: dict[str, Any] = field(default_factory=dict)
+    # 本回合的协作式中断标志（threading.Event）。工具执行层（如 bash_tool）
+    # 轮询它以便在被新消息打断时立即停止，而非等当前调用自然结束。
+    cancel_event: Any | None = None
 
     def uses_internal_executor(self) -> bool:
         return True

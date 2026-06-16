@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 from agent_service.app.models.domain_event import DomainEventModel
@@ -62,3 +63,29 @@ def test_domain_event_repository_list_since_filters_by_sequence_no() -> None:
     items = repository.list_by_session_id_since(session_id, since=1)
 
     assert [item.sequence_no for item in items] == [2]
+
+
+def test_append_assigns_unique_monotonic_sequence_under_concurrency() -> None:
+    # barge-in 会让同一 session 出现并发回合并发写事件。append 必须保证
+    # sequence_no 严格唯一且连续，否则 SSE 按 id 去重会丢事件、前端气泡消失。
+    repository = DomainEventRepository()
+    session_id = uuid4()
+    session_workspace_id = uuid4()
+
+    def emit_one(_: int) -> int:
+        event = DomainEventModel(
+            event_id=uuid4(),
+            session_id=session_id,
+            session_workspace_id=session_workspace_id,
+            event_type="session.message.appended",
+            event_scope="main_timeline",
+            sequence_no=0,
+            payload={"content": "x"},
+        )
+        return repository.append(event).sequence_no
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        sequences = list(pool.map(emit_one, range(50)))
+
+    assert len(set(sequences)) == 50, "并发分配出现了重复 sequence_no"
+    assert sorted(sequences) == list(range(1, 51))

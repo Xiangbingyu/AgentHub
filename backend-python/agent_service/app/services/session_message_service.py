@@ -10,6 +10,7 @@ from agent_service.app.repositories.session_repository import SessionRepository
 from agent_service.app.schemas.agent_run_create import AgentRunCreateRequest
 from agent_service.app.schemas.agent_run_input import AgentRunInputRequest, AgentRunInputResponse
 from agent_service.app.services.agent_run_create_service import AgentRunCreateService
+from agent_service.app.services.turn_coordinator import TURN_COORDINATOR
 
 
 class SessionMessageService:
@@ -36,6 +37,7 @@ class SessionMessageService:
         self.agent_repository = agent_repository or AgentRepository()
         self._input_service = input_service
         self._async_runner = async_runner or self._run_async
+        self.turn_coordinator = TURN_COORDINATOR
         self._create_service = AgentRunCreateService(
             agent_repository=self.agent_repository,
             agent_run_repository=self.agent_run_repository,
@@ -61,8 +63,16 @@ class SessionMessageService:
         existing = self.agent_run_repository.list_by_session_id(session.session_id)
         orchestrator_runs = [run for run in existing if run.agent_kind == "orchestrator"]
         if orchestrator_runs:
-            return orchestrator_runs[0].run_id
+            latest_run = max(orchestrator_runs, key=lambda run: run.updated_at)
+            is_active = getattr(self.turn_coordinator, "is_active", lambda _run_id: False)
+            if is_active(latest_run.run_id):
+                self.turn_coordinator.cancel(latest_run.run_id)
+                return self._create_run_for_session(session)
+            return latest_run.run_id
 
+        return self._create_run_for_session(session)
+
+    def _create_run_for_session(self, session) -> UUID:
         orchestrators = [
             agent
             for agent in self.agent_repository.list_all()
@@ -87,6 +97,7 @@ class SessionMessageService:
             raise ValueError("session not found")
 
         run_id = self._resolve_run_id(session)
+        self.turn_coordinator.cancel(run_id)
         payload = AgentRunInputRequest(
             input_id=uuid4(),
             type="user_input",

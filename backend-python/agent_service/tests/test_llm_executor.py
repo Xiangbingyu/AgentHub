@@ -71,7 +71,11 @@ def test_internal_llm_executor_executes_provider_complete(monkeypatch) -> None:
     executor = InternalLlmExecutor()
     request = LlmRequest(system_prompt="system", context_prompt="context", messages=[LlmMessage(role="user", content="hello")])
 
-    monkeypatch.setattr(executor.provider, "complete", lambda req: SimpleNamespace(content="ok", tool_calls=[], raw={"model": req.model}))
+    monkeypatch.setattr(
+        executor.provider,
+        "complete",
+        lambda req, cancel_event=None: SimpleNamespace(content="ok", tool_calls=[], raw={"model": req.model}),
+    )
 
     response = executor.execute(_runtime_bundle(), request)
 

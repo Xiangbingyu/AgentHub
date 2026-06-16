@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import httpx
@@ -14,11 +15,11 @@ class OpenAICompatibleProvider:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    def complete(self, request: LlmRequest) -> LlmResponse:
+    def complete(self, request: LlmRequest, cancel_event=None) -> LlmResponse:
         messages = [
             {"role": "system", "content": request.system_prompt},
             {"role": "system", "content": request.context_prompt},
-            *({"role": message.role, "content": message.content} for message in request.messages),
+            *(self._serialize_message(message) for message in request.messages),
         ]
 
         payload: dict[str, Any] = {
@@ -31,7 +32,17 @@ class OpenAICompatibleProvider:
         if request.tool_choice is not None:
             payload["tool_choice"] = request.tool_choice
 
-        response = httpx.post(
+        client = httpx.Client()
+        canceller = None
+        if cancel_event is not None:
+            def _watch_cancel() -> None:
+                cancel_event.wait()
+                client.close()
+
+            canceller = threading.Thread(target=_watch_cancel, daemon=True)
+            canceller.start()
+
+        response = client.post(
             f"{self.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -48,3 +59,11 @@ class OpenAICompatibleProvider:
             tool_calls=message.get("tool_calls", []),
             raw=data,
         )
+
+    def _serialize_message(self, message) -> dict[str, Any]:
+        payload: dict[str, Any] = {"role": message.role, "content": message.content}
+        if message.tool_calls:
+            payload["tool_calls"] = message.tool_calls
+        if message.tool_call_id:
+            payload["tool_call_id"] = message.tool_call_id
+        return payload

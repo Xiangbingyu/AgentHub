@@ -111,7 +111,7 @@ export default function ChatPanel({ session, messages, onSendMessage, sending, a
 
   function handleSend() {
     const content = draft.trim();
-    if (!content || sending) {
+    if (!content) {
       return;
     }
     onSendMessage?.(content);
@@ -184,10 +184,10 @@ export default function ChatPanel({ session, messages, onSendMessage, sending, a
             type="button"
             className="send-btn"
             onClick={handleSend}
-            disabled={sending || !draft.trim()}
+            disabled={!draft.trim()}
           >
             <Send size={16} />
-            {sending ? '发送中' : '发送'}
+            {sending ? '继续发送' : '发送'}
           </button>
         </div>
       </div>

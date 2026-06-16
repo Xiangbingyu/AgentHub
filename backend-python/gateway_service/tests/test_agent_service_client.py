@@ -84,3 +84,12 @@ def test_post_message_proxies_payload(monkeypatch) -> None:
 def test_default_base_url_from_settings(monkeypatch) -> None:
     client = AgentServiceClient()
     assert client.base_url.startswith("http")
+
+
+def test_client_reuses_shared_httpx_client() -> None:
+    client = AgentServiceClient(base_url="http://agent:8000")
+
+    first = client._client()
+    second = client._client()
+
+    assert first is second

@@ -42,15 +42,14 @@ class SessionService:
         self.session_workspace_repository.update(
             session_workspace.model_copy(update={"status": "attached"})
         )
-        sequence_no = self.domain_event_repository.next_sequence_no(session.session_id)
-        self.domain_event_repository.create(
+        self.domain_event_repository.append(
             DomainEventModel(
                 event_id=uuid4(),
                 session_id=session.session_id,
                 session_workspace_id=session.session_workspace_id,
                 event_type="session.message.appended",
                 event_scope="main_timeline",
-                sequence_no=sequence_no,
+                sequence_no=0,
                 payload={"content": session.title, "kind": "session_created"},
             )
         )

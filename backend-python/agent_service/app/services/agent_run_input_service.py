@@ -1,23 +1,26 @@
 from __future__ import annotations
 
 import json
-
+import threading
+import time
 from uuid import UUID, uuid4
 
+from agent_service.app.config import get_settings
+from agent_service.app.llm.llm_executor import InternalLlmExecutor
+from agent_service.app.llm.llm_types import LlmMessage, LlmRequest, LlmResponse
 from agent_service.app.models.domain_event import DomainEventModel
 from agent_service.app.models.input_event import InputEventModel
-from agent_service.app.repositories.agent_run_repository import AgentRunRepository
 from agent_service.app.repositories.agent_repository import AgentRepository
+from agent_service.app.repositories.agent_run_repository import AgentRunRepository
 from agent_service.app.repositories.domain_event_repository import DomainEventRepository
 from agent_service.app.repositories.input_event_repository import InputEventRepository
 from agent_service.app.repositories.plan_repository import PlanRepository
-from agent_service.app.llm.llm_executor import InternalLlmExecutor
-from agent_service.app.llm.llm_types import LlmMessage, LlmRequest
 from agent_service.app.runtime.loop_engine import LoopEngine
 from agent_service.app.runtime.prompt.prompt_composer import PromptComposer
 from agent_service.app.runtime.runtime_assembler import RuntimeAssembler
 from agent_service.app.schemas.agent_run_input import AgentRunInputRequest, AgentRunInputResponse
 from agent_service.app.services.domain_event_emitter import DomainEventEmitter
+from agent_service.app.services.turn_coordinator import TURN_COORDINATOR
 
 
 class AgentRunInputService:
@@ -42,6 +45,10 @@ class AgentRunInputService:
         self.executor = InternalLlmExecutor()
         self.executor_factory = lambda runtime: self.executor
         self.loop_engine = LoopEngine(agent_run_repository)
+        settings = get_settings()
+        self.turn_deadline_seconds = settings.turn_deadline_seconds
+        self.history_max_messages = settings.history_max_messages
+        self.turn_coordinator = TURN_COORDINATOR
 
     def input(self, run_id: UUID, payload: AgentRunInputRequest) -> AgentRunInputResponse:
         if self.input_event_repository.get_by_idempotency_key(run_id, payload.idempotency_key) is not None:
@@ -56,7 +63,17 @@ class AgentRunInputService:
         )
         self.input_event_repository.create(input_event)
 
+        # 注册本回合：若该 run 已有进行中的回合，会给它置中断标志，让其在下一轮边界停下。
+        turn = self.turn_coordinator.begin(run_id)
+        try:
+            return self._run_turn(run_id, input_event, turn)
+        finally:
+            self.turn_coordinator.end(run_id, turn.token)
+
+    def _run_turn(self, run_id, input_event, turn) -> AgentRunInputResponse:
         runtime_bundle = self.runtime_assembler.build(run_id)
+        # 把本回合的中断标志挂到 bundle 上，使工具执行层（bash_tool 等）能抢占式停止。
+        runtime_bundle.cancel_event = turn.cancel_event
         self._persist_domain_event(runtime_bundle, input_event)
         self._prepare_run_status(runtime_bundle, input_event)
         self._emit_run_started(runtime_bundle)
@@ -67,19 +84,23 @@ class AgentRunInputService:
             initial_request = LlmRequest(
                 system_prompt=runtime_bundle.prompt_view.system_prompt,
                 context_prompt=runtime_bundle.prompt_view.context_prompt,
-                messages=[
-                    LlmMessage(role="user", content=self._build_user_message_content(input_event)),
-                ],
+                messages=self._build_conversation_messages(runtime_bundle, input_event),
                 tools=list(runtime_bundle.tool_view.model_tools),
                 tool_choice=runtime_bundle.tool_view.tool_choice,
                 model=runtime_bundle.executor_config.get("model", ""),
             )
-            llm_response = executor.execute(runtime_bundle, initial_request)
+            llm_response = self._execute_with_interrupt(executor, runtime_bundle, initial_request, turn)
         except Exception as exc:
             if self._is_worker_run(runtime_bundle):
                 self._persist_worker_failure(runtime_bundle, error=str(exc))
-            self._emit_run_completed(runtime_bundle, status="failed")
-            raise
+                self._emit_run_completed(runtime_bundle, status="failed")
+                raise
+            # 编排者首次 LLM 调用失败：给可见收尾 + 结束回合，会话保持可继续，不静默 500。
+            terminal = self._terminal_error_response(LlmResponse(content="", tool_calls=[], raw={}), exc)
+            self._emit_agent_reply(runtime_bundle, terminal)
+            self.agent_run_repository.update_status(run_id, "chatting")
+            self._emit_run_completed(runtime_bundle, status="chatting")
+            return AgentRunInputResponse(run_id=run_id, status="accepted")
 
         if self._is_worker_run(runtime_bundle):
             if runtime_bundle.tool_view.runtime_tools_enabled:
@@ -93,7 +114,14 @@ class AgentRunInputService:
             return AgentRunInputResponse(run_id=run_id, status="accepted")
 
         if runtime_bundle.tool_view.runtime_tools_enabled:
-            llm_response = self._run_internal_orchestrator_tool_loop(runtime_bundle, executor, initial_request, llm_response)
+            llm_response = self._run_internal_orchestrator_tool_loop(
+                runtime_bundle, executor, initial_request, llm_response, turn
+            )
+        # 被新消息中断：显式发 interrupted 收尾，避免前端永远等待 loading。
+        if turn.cancel_event.is_set():
+            self._emit_run_completed(runtime_bundle, status="interrupted")
+            return AgentRunInputResponse(run_id=run_id, status="accepted")
+
         self._emit_agent_reply(runtime_bundle, llm_response)
         loop_result = self.loop_engine.run(runtime_bundle, input_event)
 
@@ -110,8 +138,7 @@ class AgentRunInputService:
         if input_event.type.value != "user_input":
             return
 
-        sequence_no = self.domain_event_repository.next_sequence_no(session_id)
-        self.domain_event_repository.create(
+        self.domain_event_repository.append(
             DomainEventModel(
                 event_id=uuid4(),
                 session_id=session_id,
@@ -119,7 +146,7 @@ class AgentRunInputService:
                 run_id=runtime_bundle.agent_run.run_id,
                 event_type="session.message.appended",
                 event_scope="main_timeline",
-                sequence_no=sequence_no,
+                sequence_no=0,
                 payload={
                     "role": "user",
                     "content": self._build_user_message_content(input_event),
@@ -317,14 +344,61 @@ class AgentRunInputService:
             return content
         return str(input_event.payload)
 
-    def _run_internal_orchestrator_tool_loop(self, runtime_bundle, executor, request: LlmRequest, llm_response):
+    def _build_conversation_messages(
+        self, runtime_bundle, input_event: InputEventModel
+    ) -> list[LlmMessage]:
+        """重建本 run 的多轮对话，给 LLM 提供上下文连续性。
+
+        历史来源是已持久化的 session.message.appended 事件（user/assistant），
+        当前这轮的用户消息在 input() 中已先行落事件，因此天然包含在末尾。
+        无 session（如部分 worker/测试场景）时回退为仅当前消息。
+        """
+        session_id = runtime_bundle.agent_run.session_id
+        fallback = [LlmMessage(role="user", content=self._build_user_message_content(input_event))]
+        if session_id is None:
+            return fallback
+
+        events = self.domain_event_repository.list_by_run_id(runtime_bundle.agent_run.run_id)
+        messages: list[LlmMessage] = []
+        for event in events:
+            if event.event_type != "session.message.appended":
+                continue
+            role = event.payload.get("role")
+            content = event.payload.get("content")
+            if role not in ("user", "assistant"):
+                continue
+            if not isinstance(content, str) or not content.strip():
+                continue
+            messages.append(LlmMessage(role=role, content=content))
+
+        if not messages:
+            return fallback
+
+        if self.history_max_messages and len(messages) > self.history_max_messages:
+            messages = messages[-self.history_max_messages :]
+        return messages
+
+    def _run_internal_orchestrator_tool_loop(
+        self, runtime_bundle, executor, request: LlmRequest, llm_response, turn=None
+    ):
         current_request = request
         current_response = llm_response
         max_rounds = 8
+        deadline = None
+        if self.turn_deadline_seconds:
+            deadline = time.monotonic() + self.turn_deadline_seconds
 
         for _ in range(max_rounds):
             if not current_response.tool_calls:
                 return current_response
+
+            # 被后到的新消息中断：立即停下，把控制权交给接管的新回合。
+            if turn is not None and turn.cancel_event.is_set():
+                return current_response
+
+            # 超过本轮 run 的墙钟时限则强制收尾，避免无限运行 / 静默不结束。
+            if deadline is not None and time.monotonic() >= deadline:
+                return self._terminal_timeout_response(current_response)
 
             # 本轮工具调用前，若 LLM 先产出了一段思考/说明文字，作为独立气泡推出
             if current_response.content and current_response.content.strip():
@@ -334,7 +408,12 @@ class AgentRunInputService:
             for tool_call in current_response.tool_calls:
                 self._emit_tool_call(runtime_bundle, tool_call)
 
-            tool_results = runtime_bundle.tool_registry.dispatch(runtime_bundle, current_response.tool_calls)
+            try:
+                tool_results = runtime_bundle.tool_registry.dispatch(
+                    runtime_bundle, current_response.tool_calls
+                )
+            except Exception as exc:  # 工具执行抛错也要收尾，不能让本轮静默死掉
+                return self._terminal_error_response(current_response, exc)
             refreshed_run = self.agent_run_repository.get_by_id(runtime_bundle.agent_run.run_id)
             if refreshed_run is not None:
                 runtime_bundle.agent_run = refreshed_run
@@ -347,12 +426,19 @@ class AgentRunInputService:
 
             messages = list(current_request.messages)
             if current_response.content:
-                messages.append(LlmMessage(role="assistant", content=current_response.content))
+                messages.append(
+                    LlmMessage(
+                        role="assistant",
+                        content=current_response.content,
+                        tool_calls=list(current_response.tool_calls),
+                    )
+                )
             for item in tool_results:
                 messages.append(
                     LlmMessage(
                         role="tool",
                         content=self._format_tool_result_message(item),
+                        tool_call_id=str(item["tool_call_id"] or ""),
                     )
                 )
 
@@ -364,9 +450,62 @@ class AgentRunInputService:
                 tool_choice=current_request.tool_choice,
                 model=current_request.model,
             )
-            current_response = executor.execute(runtime_bundle, current_request)
+            try:
+                current_response = self._execute_with_interrupt(executor, runtime_bundle, current_request, turn)
+            except Exception as exc:  # 轮间 LLM 调用抛错（超时/5xx/响应异常）是静默卡死的主因
+                return self._terminal_error_response(current_response, exc)
 
+        # 跑满轮次仍带未处理的工具调用：给出明确收尾，不静默结束。
+        if current_response.tool_calls:
+            return self._terminal_notice_response(
+                current_response,
+                f"本轮已达到工具调用上限（{max_rounds} 轮）并自动结束，可能未完成全部步骤。",
+            )
         return current_response
+
+    def _terminal_timeout_response(self, last_response):
+        return self._terminal_notice_response(
+            last_response,
+            f"本轮已达到时限（{int(self.turn_deadline_seconds)} 秒）并自动结束，可能未完成全部步骤。",
+        )
+
+    def _terminal_notice_response(self, last_response, reason: str):
+        """把强制收尾原因并入最后一段回复，确保 run 始终有可见的结束回复。"""
+        content = (last_response.content or "").strip()
+        notice = f"{reason}请查看工作区当前状态后再继续。"
+        merged = f"{content}\n\n{notice}" if content else notice
+        raw = getattr(last_response, "raw", {}) or {}
+        return LlmResponse(content=merged, tool_calls=[], raw=raw)
+
+    def _terminal_error_response(self, last_response, exc: Exception):
+        """工具/LLM 调用抛错时的收尾：把错误并入回复，避免本轮静默卡死。"""
+        reason = f"本轮执行出错并自动结束：{type(exc).__name__}: {exc}。"
+        return self._terminal_notice_response(last_response, reason)
+
+    def _execute_with_interrupt(self, executor, runtime_bundle, request, turn):
+        if turn is None:
+            return executor.execute(runtime_bundle, request)
+
+        result: dict[str, object] = {}
+        error: dict[str, Exception] = {}
+
+        def _run() -> None:
+            try:
+                result["response"] = executor.execute(runtime_bundle, request)
+            except Exception as exc:  # pragma: no cover - surfaced to caller below
+                error["exc"] = exc
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+
+        while worker.is_alive():
+            if turn.cancel_event.is_set():
+                return LlmResponse(content="", tool_calls=[], raw={"interrupted": True})
+            worker.join(0.1)
+
+        if "exc" in error:
+            raise error["exc"]
+        return result["response"]
 
     def _format_tool_result_message(self, item: dict[str, object]) -> str:
         return (

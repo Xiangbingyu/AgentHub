@@ -193,6 +193,13 @@ export default function Chat() {
       setAgentRunning(false);
       return;
     }
+    if (event.event_type === 'agent.tool_call') {
+      setAgentRunning(true);
+    }
+    if (event.event_type === 'agent.tool_result' || event.event_type === 'plan.updated') {
+      // 工具结果/计划落地已可见时，先释放前台占用，不再强依赖下一轮 LLM 收尾。
+      setAgentRunning(false);
+    }
     if (!TIMELINE_EVENT_TYPES.includes(event.event_type)) {
       return;
     }

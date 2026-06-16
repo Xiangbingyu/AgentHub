@@ -5,6 +5,7 @@ import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from gateway_service.app.client.agent_service_client import AgentServiceClient
 
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 # 自适应轮询：有新事件时用短间隔；连续空轮退避到较长间隔。
 STREAM_ACTIVE_INTERVAL = 0.3
-STREAM_IDLE_INTERVAL = 2.0
+STREAM_IDLE_INTERVAL = 0.8
 # 连续空轮上限——达到后收尾本次连接，浏览器 EventSource 会自动携带
 # Last-Event-ID 重连，避免长连接无限挂起。
 STREAM_MAX_IDLE_POLLS = 600
@@ -39,7 +40,9 @@ async def session_stream(session_id: str, request: Request):
                 if await request.is_disconnected():
                     break
 
-                events = client.list_session_events(session_id, since=last_seq)
+                events = await run_in_threadpool(
+                    client.list_session_events, session_id, since=last_seq
+                )
                 if events:
                     idle_polls = 0
                     for event in events:

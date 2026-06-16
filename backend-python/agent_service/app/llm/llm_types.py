@@ -8,6 +8,8 @@ from typing import Any
 class LlmMessage:
     role: str
     content: str
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_call_id: str | None = None
 
 
 @dataclass(slots=True)

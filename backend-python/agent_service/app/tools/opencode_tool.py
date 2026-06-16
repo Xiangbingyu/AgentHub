@@ -32,6 +32,7 @@ class OpenCodeTool:
             cwd=runtime.workspace_root,
             env=env,
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             timeout=int(tool_options.get("timeout_seconds", 300)),
             check=False,
         )

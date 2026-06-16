@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import uuid4
 
 from agent_service.app.models.agent import AgentModel
@@ -241,13 +240,49 @@ def test_bash_tool_moves_file_with_powershell_command(tmp_path: Path) -> None:
     assert target_path.read_text(encoding="utf-8").strip() == "test"
 
 
+def test_bash_tool_reports_success_when_command_has_no_stdout(tmp_path: Path) -> None:
+    tool = BashTool()
+    runtime = _runtime(tmp_path)
+
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": (
+                'python -c "from pathlib import Path; '
+                "Path('created.txt').write_text('ok', encoding='utf-8')\""
+            ),
+            "description": "Creates a file",
+        },
+    )
+
+    assert result["metadata"]["exit_code"] == 0
+    assert (tmp_path / "created.txt").exists()
+    assert "completed successfully" in result["output"].lower()
+    assert "no output" in result["output"].lower()
+
+
 def test_bash_tool_handles_non_utf8_output_without_strip_failure(tmp_path: Path, monkeypatch) -> None:
     tool = BashTool()
     runtime = _runtime(tmp_path)
 
+    class _FakeProcess:
+        returncode = 0
+        pid = 4321
+
+        def communicate(self):
+            return None, None
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
     monkeypatch.setattr(
-        "agent_service.app.tools.bash_tool.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(stdout=None, stderr=None, returncode=0),
+        "agent_service.app.tools.bash_tool.subprocess.Popen",
+        lambda *args, **kwargs: _FakeProcess(),
     )
 
     result = tool.run(
@@ -260,5 +295,112 @@ def test_bash_tool_handles_non_utf8_output_without_strip_failure(tmp_path: Path,
         },
     )
 
-    assert result["output"] == "(no output)"
+    assert "completed successfully" in result["output"].lower()
+    assert "no output" in result["output"].lower()
     assert result["metadata"]["exit_code"] == 0
+
+
+def test_bash_tool_does_not_hang_on_command_reading_stdin(tmp_path: Path) -> None:
+    # A script that reads stdin must not block forever: stdin is closed
+    # (DEVNULL), so input() gets EOF and the process exits promptly instead of
+    # freezing the whole run. Generous timeout proves we exit via EOF, not timeout.
+    script = tmp_path / "reads_stdin.py"
+    script.write_text(
+        "try:\n"
+        "    data = input()\n"
+        "    print('got', data)\n"
+        "except EOFError:\n"
+        "    print('eof')\n",
+        encoding="utf-8",
+    )
+
+    tool = BashTool()
+    runtime = _runtime(tmp_path)
+
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": "python reads_stdin.py",
+            "description": "Reads stdin",
+            "timeout": 30000,
+        },
+    )
+
+    assert result["metadata"]["timed_out"] is False
+    assert result["metadata"]["exit_code"] == 0
+    assert "eof" in result["output"]
+
+
+def test_bash_tool_aborts_running_command_when_cancel_event_fires(tmp_path: Path) -> None:
+    # 抢占式打断：命令执行中途置位 cancel_event，必须立刻杀进程并返回 aborted，
+    # 而不是等命令自然跑完（这里是 10s sleep，但应在 ~1s 内被打断）。
+    import threading
+    import time
+
+    cancel_event = threading.Event()
+    runtime = _runtime(tmp_path)
+    runtime.cancel_event = cancel_event
+
+    # 0.5s 后从另一线程触发打断
+    threading.Timer(0.5, cancel_event.set).start()
+
+    tool = BashTool()
+    started = time.monotonic()
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": 'python -c "import time; time.sleep(10)"',
+            "description": "Sleeps long",
+            "timeout": 30000,
+        },
+    )
+    elapsed = time.monotonic() - started
+
+    assert result["metadata"]["aborted"] is True
+    assert result["metadata"]["timed_out"] is False
+    assert elapsed < 5, f"打断应在数秒内生效，实际 {elapsed:.1f}s"
+    assert "aborted" in result["output"].lower()
+
+
+def test_bash_tool_aborts_problematic_powershell_heredoc_command(tmp_path: Path) -> None:
+    import threading
+    import time
+
+    cancel_event = threading.Event()
+    runtime = _runtime(tmp_path)
+    runtime.cancel_event = cancel_event
+
+    threading.Timer(0.5, cancel_event.set).start()
+
+    tool = BashTool()
+    started = time.monotonic()
+    result = tool.run(
+        run_id=runtime.agent_run.run_id,
+        workspace_id=runtime.agent_run.workspace_id,
+        runtime=runtime,
+        arguments={
+            "command": (
+                "Set-Content -Path add.py -Value @'\n"
+                "#!/usr/bin/env python3\n"
+                "# -*- coding: utf-8 -*-\n\n"
+                "def add(a, b):\n"
+                "    return a + b\n\n"
+                'if __name__ == \"__main__\":\n'
+                "    a = 5\n"
+                "    b = 3\n"
+                "    result = add(a, b)\n"
+                '    print(f\"{a} + {b} = {result}\")\n'
+                "'@ -Encoding UTF8"
+            ),
+            "description": "Creates add.py via PowerShell heredoc",
+            "timeout": 30000,
+        },
+    )
+    elapsed = time.monotonic() - started
+
+    assert result["metadata"]["aborted"] is True
+    assert elapsed < 5, f"problematic PowerShell command should abort quickly, got {elapsed:.1f}s"
