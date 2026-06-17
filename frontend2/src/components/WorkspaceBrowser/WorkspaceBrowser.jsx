@@ -5,8 +5,11 @@ import {
   FolderClosed,
   FolderOpen,
   FolderKanban,
+  Plus,
 } from 'lucide-react';
 import { useState } from 'react';
+import PanelHeader from '../ui/PanelHeader';
+import PrimaryButton from '../ui/PrimaryButton';
 import './WorkspaceBrowser.css';
 
 export default function WorkspaceBrowser({
@@ -86,43 +89,44 @@ export default function WorkspaceBrowser({
 
   return (
     <aside className="workspace-browser-nav">
-      <div className="workspace-browser-nav-header">
-        <div>
-          <h2>Workspace</h2>
-          <p>独立产品资源</p>
-        </div>
-        <button type="button" className="workspace-primary-btn" onClick={onOpenCreate}>
-          新建
-        </button>
-      </div>
-      {isCreateOpen ? (
-        <form className="workspace-create-form" onSubmit={handleSubmit}>
-          <label className="workspace-field">
-            <span>Workspace 名称</span>
-            <input
-              type="text"
-              value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-              placeholder="例如：Project Alpha"
-              required
-            />
-          </label>
-          <label className="workspace-field">
-            <span>Workspace 描述</span>
-            <textarea
-              value={draftDescription}
-              onChange={(event) => setDraftDescription(event.target.value)}
-              placeholder="这个 workspace 用来做什么"
-              rows={3}
-            />
-          </label>
-          {createError ? <p className="workspace-form-error">{createError}</p> : null}
-          <button type="submit" className="workspace-primary-btn" disabled={createPending || !draftName.trim()}>
-            {createPending ? '创建中...' : '创建 workspace'}
-          </button>
-        </form>
-      ) : null}
-      <span className="workspace-count">{workspaces.length} 个 workspace</span>
+      <PanelHeader
+        title="Workspace"
+        subtitle="独立产品资源"
+        action={
+          <PrimaryButton icon={Plus} onClick={onOpenCreate}>
+            新建
+          </PrimaryButton>
+        }
+      >
+        <span className="panel-header-meta">{workspaces.length} 个 Workspace</span>
+        {isCreateOpen ? (
+          <form className="workspace-create-form" onSubmit={handleSubmit}>
+            <label className="workspace-field">
+              <span>Workspace 名称</span>
+              <input
+                type="text"
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                placeholder="例如：Project Alpha"
+                required
+              />
+            </label>
+            <label className="workspace-field">
+              <span>Workspace 描述</span>
+              <textarea
+                value={draftDescription}
+                onChange={(event) => setDraftDescription(event.target.value)}
+                placeholder="这个 workspace 用来做什么"
+                rows={3}
+              />
+            </label>
+            {createError ? <p className="workspace-form-error">{createError}</p> : null}
+            <PrimaryButton type="submit" disabled={createPending || !draftName.trim()}>
+              {createPending ? '创建中...' : '新建 Workspace'}
+            </PrimaryButton>
+          </form>
+        ) : null}
+      </PanelHeader>
 
       <div className="workspace-browser-tree">
         {workspaces.map((workspace) => {

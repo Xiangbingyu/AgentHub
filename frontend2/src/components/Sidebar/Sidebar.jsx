@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
 
 const NAV_ITEMS = [
-  { to: '/chat', label: 'Chat', icon: MessageSquare },
+  { to: '/session', label: 'Session', icon: MessageSquare },
   { to: '/workspace', label: 'Workspace', icon: FolderKanban },
   { to: '/team', label: 'Team', icon: Users },
 ];

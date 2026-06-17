@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 from agentscope.app._manager import BackgroundTaskManager
 from agentscope.app._manager._scheduler import SchedulerManager
 from agentscope.app._service._chat import ChatService
 from agentscope.app.message_bus import RedisMessageBus
 from agentscope.app.storage import RedisStorage
-from agentscope.event import HintBlockEvent, UserConfirmResultEvent
+from agentscope.event import HintBlockEvent, ReplyStartEvent, UserConfirmResultEvent
 from agentscope.message import AssistantMsg, HintBlock, UserMsg
 from redis.asyncio import Redis
 
@@ -35,6 +37,117 @@ class AgentScopeChatRuntime:
             background_task_manager=background_task_manager,
             message_bus=message_bus,
         )
+
+    async def _persist_partial_reply_from_replay_log(
+        self,
+        *,
+        storage: RedisStorage,
+        message_bus: RedisMessageBus,
+        user_id: str,
+        session_id: str,
+    ) -> None:
+        entries = await message_bus.session_read_events(session_id)
+        if not entries:
+            return
+
+        reply_messages: dict[str, AssistantMsg] = {}
+        for _entry_id, payload in entries:
+            try:
+                event_type = payload.get("type")
+            except AttributeError:
+                continue
+            if event_type == ReplyStartEvent.model_fields["type"].default:
+                reply_id = payload.get("reply_id")
+                if not reply_id:
+                    continue
+                reply_messages[reply_id] = AssistantMsg(
+                    id=reply_id,
+                    name=payload.get("name") or "assistant",
+                    content=[],
+                )
+                continue
+
+            reply_id = payload.get("reply_id")
+            if not reply_id or reply_id not in reply_messages:
+                continue
+
+            event = None
+            for event_cls in (
+                ReplyStartEvent,
+                HintBlockEvent,
+            ):
+                if payload.get("type") == event_cls.model_fields["type"].default:
+                    event = event_cls.model_validate(payload)
+                    break
+            if event is None:
+                try:
+                    from agentscope.event._event import (
+                        ModelCallEndEvent,
+                        TextBlockDeltaEvent,
+                        TextBlockEndEvent,
+                        TextBlockStartEvent,
+                        ThinkingBlockDeltaEvent,
+                        ThinkingBlockEndEvent,
+                        ThinkingBlockStartEvent,
+                        ToolCallDeltaEvent,
+                        ToolCallEndEvent,
+                        ToolCallStartEvent,
+                        ToolResultDataDeltaEvent,
+                        ToolResultEndEvent,
+                        ToolResultStartEvent,
+                        ToolResultTextDeltaEvent,
+                        ReplyEndEvent,
+                    )
+                    event_map = {
+                        cls.model_fields["type"].default: cls
+                        for cls in (
+                            ReplyEndEvent,
+                            ModelCallEndEvent,
+                            TextBlockStartEvent,
+                            TextBlockDeltaEvent,
+                            TextBlockEndEvent,
+                            ThinkingBlockStartEvent,
+                            ThinkingBlockDeltaEvent,
+                            ThinkingBlockEndEvent,
+                            ToolCallStartEvent,
+                            ToolCallDeltaEvent,
+                            ToolCallEndEvent,
+                            ToolResultStartEvent,
+                            ToolResultTextDeltaEvent,
+                            ToolResultDataDeltaEvent,
+                            ToolResultEndEvent,
+                        )
+                    }
+                    event_cls = event_map.get(payload.get("type"))
+                    if event_cls is None:
+                        continue
+                    event = event_cls.model_validate(payload)
+                except Exception:
+                    continue
+
+            reply_messages[reply_id].append_event(event)
+
+        for reply in reply_messages.values():
+            if reply.content:
+                await storage.upsert_message(user_id, session_id, reply)
+
+    async def persist_partial_reply(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+    ) -> None:
+        redis = self._new_redis()
+        storage = RedisStorage(connection_pool=redis.connection_pool)
+        message_bus = RedisMessageBus(connection_pool=redis.connection_pool)
+        async with storage, message_bus:
+            await self._persist_partial_reply_from_replay_log(
+                storage=storage,
+                message_bus=message_bus,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        await redis.aclose()
 
     async def _persist_wakeup_hints(
         self,
@@ -90,7 +203,7 @@ class AgentScopeChatRuntime:
         storage = RedisStorage(connection_pool=redis.connection_pool)
         message_bus = RedisMessageBus(connection_pool=redis.connection_pool)
         async with storage, message_bus, self._workspace_runtime as workspace_manager:
-            background_task_manager = BackgroundTaskManager()
+            background_task_manager = BackgroundTaskManager(message_bus)
             scheduler_manager = SchedulerManager(storage=storage, message_bus=message_bus)
             async with scheduler_manager:
                 chat_service = ChatService(
@@ -100,12 +213,20 @@ class AgentScopeChatRuntime:
                     background_task_manager=background_task_manager,
                     message_bus=message_bus,
                 )
-                await chat_service.run(
-                    user_id=user_id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    input_msg=UserMsg(name="user", content=content),
-                )
+                try:
+                    await chat_service.run(
+                        user_id=user_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        input_msg=UserMsg(name="user", content=content),
+                    )
+                finally:
+                    await self._persist_partial_reply_from_replay_log(
+                        storage=storage,
+                        message_bus=message_bus,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
         await redis.aclose()
 
     async def run_wakeup(
@@ -125,7 +246,7 @@ class AgentScopeChatRuntime:
                 session_id=session_id,
                 agent_id=agent_id,
             )
-            background_task_manager = BackgroundTaskManager()
+            background_task_manager = BackgroundTaskManager(message_bus)
             scheduler_manager = SchedulerManager(storage=storage, message_bus=message_bus)
             async with scheduler_manager:
                 chat_service = ChatService(
@@ -135,12 +256,20 @@ class AgentScopeChatRuntime:
                     background_task_manager=background_task_manager,
                     message_bus=message_bus,
                 )
-                await chat_service.run(
-                    user_id=user_id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    input_msg=None,
-                )
+                try:
+                    await chat_service.run(
+                        user_id=user_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        input_msg=None,
+                    )
+                finally:
+                    await self._persist_partial_reply_from_replay_log(
+                        storage=storage,
+                        message_bus=message_bus,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
         await redis.aclose()
 
     async def continue_with_confirm_event(
@@ -154,7 +283,7 @@ class AgentScopeChatRuntime:
         storage = RedisStorage(connection_pool=redis.connection_pool)
         message_bus = RedisMessageBus(connection_pool=redis.connection_pool)
         async with storage, message_bus, self._workspace_runtime as workspace_manager:
-            background_task_manager = BackgroundTaskManager()
+            background_task_manager = BackgroundTaskManager(message_bus)
             scheduler_manager = SchedulerManager(storage=storage, message_bus=message_bus)
             async with scheduler_manager:
                 chat_service = ChatService(
@@ -164,12 +293,20 @@ class AgentScopeChatRuntime:
                     background_task_manager=background_task_manager,
                     message_bus=message_bus,
                 )
-                await chat_service.run(
-                    user_id=user_id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    input_msg=event,
-                )
+                try:
+                    await chat_service.run(
+                        user_id=user_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        input_msg=event,
+                    )
+                finally:
+                    await self._persist_partial_reply_from_replay_log(
+                        storage=storage,
+                        message_bus=message_bus,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
         await redis.aclose()
 
     async def publish_cancel(self, session_id: str) -> None:

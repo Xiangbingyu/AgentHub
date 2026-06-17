@@ -209,6 +209,45 @@ def test_session_stream_replays_existing_event_for_late_subscriber() -> None:
     assert any(event_name == "session.event" for event_name, _payload in events[1:])
 
 
+def test_session_stream_emits_incremental_assistant_message_events() -> None:
+    client = TestClient(create_app())
+    created = _create_session(client, "Incremental Stream")
+
+    client.post(
+        f"/api/v1/sessions/{created['session_id']}/messages",
+        json={"content": "say hello"},
+    )
+
+    events = asyncio.run(
+        _read_stream_response_events(client, created["session_id"], limit=4, timeout_secs=8.0),
+    )
+
+    event_types = [payload.get("type") for name, payload in events if name == "session.event"]
+
+    assert "message.started" in event_types
+    assert "message.delta" in event_types
+    assert "message.completed" in event_types
+
+
+def test_session_stream_emits_runtime_update_events() -> None:
+    client = TestClient(create_app())
+    created = _create_session(client, "Runtime Update Stream")
+
+    client.post(
+        f"/api/v1/sessions/{created['session_id']}/messages",
+        json={"content": "hello runtime"},
+    )
+
+    events = asyncio.run(
+        _read_stream_response_events(client, created["session_id"], limit=6, timeout_secs=8.0),
+    )
+
+    assert any(
+        name == "session.event" and payload.get("type") == "runtime.updated"
+        for name, payload in events
+    )
+
+
 def test_worker_session_event_enters_replay_log() -> None:
     client = TestClient(create_app())
     workspace = client.post("/api/v1/workspaces", json={"name": "Project Alpha"}).json()

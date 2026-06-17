@@ -1,5 +1,5 @@
 .session-list-container {
-  width: 320px;
+  width: var(--fs-left-panel-width);
   background: var(--fs-bg-list);
   border-right: 1px solid var(--fs-border);
   display: flex;
@@ -8,38 +8,9 @@
   flex-shrink: 0;
 }
 
-.session-header {
-  padding: 16px 16px 8px;
-}
-
-.header-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.header-top h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.session-create-btn {
-  border: none;
-  border-radius: 999px;
-  background: #10233f;
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
 .session-create-form {
-  margin-bottom: 12px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px;
   border: 1px solid var(--fs-border);
   border-radius: 12px;
@@ -77,10 +48,12 @@
 .search-bar {
   display: flex;
   align-items: center;
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
   background: var(--fs-bg-chat);
   border-radius: 6px;
   padding: 6px 12px;
-  margin-bottom: 8px;
   border: 1px solid transparent;
 }
 

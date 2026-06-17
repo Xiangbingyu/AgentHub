@@ -74,6 +74,11 @@ class RuntimeService:
             raise KeyError(session_id)
         session.status = "cancelling"
         await self._session_repository.upsert(session)
+        if self._chat_runtime is not None:
+            await self._chat_runtime.persist_partial_reply(
+                user_id=self._runtime_principal,
+                session_id=session.session_id,
+            )
         if self._chat_run_registry is not None:
             task = self._chat_run_registry.get(session_id)
             if task is not None and not task.done():

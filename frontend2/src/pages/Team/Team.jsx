@@ -3,6 +3,7 @@ import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { api } from '../../utils/api';
 import TeamDetailPanel from '../../components/TeamDetailPanel/TeamDetailPanel';
 import TeamList from '../../components/TeamList/TeamList';
+import PrimaryButton from '../../components/ui/PrimaryButton';
 import './Team.css';
 
 export default function Team() {
@@ -33,9 +34,7 @@ export default function Team() {
       ) : error ? (
         <div className="team-loading">
           <p>{error}</p>
-          <button type="button" className="team-create-btn" onClick={() => void reload()}>
-            重试
-          </button>
+          <PrimaryButton onClick={() => void reload()}>重试</PrimaryButton>
         </div>
       ) : (
         <>

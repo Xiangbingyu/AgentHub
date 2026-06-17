@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import Chat from './Chat';
@@ -64,7 +64,7 @@ describe('Chat', () => {
     vi.clearAllMocks();
   });
 
-  test('subscribes to session stream and refreshes detail on session events', async () => {
+  test('streams assistant replies into the active chat without clearing existing history', async () => {
     api.listSessions.mockResolvedValue({
       sessions: [
         {
@@ -77,78 +77,7 @@ describe('Chat', () => {
     });
     api.listTeams.mockResolvedValue({ teams: [] });
     api.listWorkspaces.mockResolvedValue({ workspaces: [] });
-    api.getSessionDetail
-      .mockResolvedValueOnce({
-        session: {
-          session_id: 'session-1',
-          name: 'Existing Session',
-          status: 'idle',
-          updated_at: '2026-06-17T18:00:00',
-        },
-        team: { name: 'Default Team' },
-        messages: [],
-        runtime: {
-          current_summary: '',
-          current_plan: null,
-          waiting_items: [],
-          agent_statuses: [],
-        },
-        workspace_status: { name: 'Project Alpha' },
-      })
-      .mockResolvedValueOnce({
-        session: {
-          session_id: 'session-1',
-          name: 'Existing Session',
-          status: 'running',
-          updated_at: '2026-06-17T18:01:00',
-        },
-        team: { name: 'Default Team' },
-        messages: [
-          {
-            id: 'message-1',
-            role: 'assistant',
-            name: 'Leader Agent',
-            content: [{ type: 'text', text: 'Streamed reply' }],
-          },
-        ],
-        runtime: {
-          current_summary: 'updated',
-          current_plan: null,
-          waiting_items: [],
-          agent_statuses: [],
-        },
-        workspace_status: { name: 'Project Alpha' },
-      });
-
-    render(<Chat />);
-
-    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
-
-    expect(MockEventSource.instances).toHaveLength(1);
-    MockEventSource.instances[0].emit('session.event', { type: 'message.created' });
-
-    expect(screen.getByRole('heading', { level: 3, name: 'Existing Session' })).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.getByText('Streamed reply')).toBeTruthy();
-    });
-  });
-
-  test('keeps existing history visible while stream refresh is in flight', async () => {
-    let resolveDetail;
-    api.listSessions.mockResolvedValue({
-      sessions: [
-        {
-          session_id: 'session-1',
-          name: 'Existing Session',
-          status: 'idle',
-          updated_at: '2026-06-17T18:00:00',
-        },
-      ],
-    });
-    api.listTeams.mockResolvedValue({ teams: [] });
-    api.listWorkspaces.mockResolvedValue({ workspaces: [] });
-    api.getSessionDetail
-      .mockResolvedValueOnce({
+    api.getSessionDetail.mockResolvedValue({
         session: {
           session_id: 'session-1',
           name: 'Existing Session',
@@ -171,55 +100,40 @@ describe('Chat', () => {
           agent_statuses: [],
         },
         workspace_status: { name: 'Project Alpha' },
-      })
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveDetail = resolve;
-          }),
-      );
+      });
 
     render(<Chat />);
 
-    await screen.findByText('Old history');
-    MockEventSource.instances[0].emit('session.event', { type: 'message.created' });
-
+    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
     expect(screen.getByText('Old history')).toBeTruthy();
 
-    resolveDetail({
-      session: {
+    expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(1);
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_START',
         session_id: 'session-1',
-        name: 'Existing Session',
-        status: 'running',
-        updated_at: '2026-06-17T18:01:00',
-      },
-      team: { name: 'Default Team' },
-      messages: [
-        {
-          id: 'message-1',
-          role: 'assistant',
-          name: 'Leader Agent',
-          content: [{ type: 'text', text: 'Old history' }],
-        },
-        {
-          id: 'message-2',
-          role: 'assistant',
-          name: 'Leader Agent',
-          content: [{ type: 'text', text: 'New history' }],
-        },
-      ],
-      runtime: {
-        current_summary: 'updated',
-        current_plan: null,
-        waiting_items: [],
-        agent_statuses: [],
-      },
-      workspace_status: { name: 'Project Alpha' },
+        reply_id: 'reply-1',
+        name: 'Leader Agent',
+        role: 'assistant',
+      });
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'TEXT_BLOCK_DELTA',
+        reply_id: 'reply-1',
+        block_id: 'block-1',
+        delta: 'Streamed reply',
+      });
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_END',
+        session_id: 'session-1',
+        reply_id: 'reply-1',
+      });
     });
 
     await waitFor(() => {
-      expect(screen.getByText('New history')).toBeTruthy();
+      expect(screen.getByText('Streamed reply')).toBeTruthy();
     });
+    expect(screen.getByText('Old history')).toBeTruthy();
+    expect(document.querySelector('.typing-bubble')).toBeNull();
   });
 
   test('creates a session and switches to it', async () => {
@@ -320,7 +234,7 @@ describe('Chat', () => {
       session: {
         session_id: 'session-1',
         name: 'Existing Session',
-        status: 'waiting',
+        status: 'idle',
         updated_at: '2026-06-17T18:00:00',
       },
       team: { name: 'Default Team' },
@@ -345,6 +259,15 @@ describe('Chat', () => {
 
     const user = userEvent.setup();
     render(<Chat />);
+    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
+
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REQUIRE_USER_CONFIRM',
+        reply_id: 'reply-1',
+        tool_calls: [{ id: 'wait-1', name: 'Write' }],
+      });
+    });
 
     await screen.findByText('Tool Write requires confirmation.');
 
@@ -353,7 +276,17 @@ describe('Chat', () => {
       expect(api.resolveWaitingItem).toHaveBeenCalledWith('session-1', 'wait-1', true);
     });
 
-    await user.click(screen.getAllByRole('button', { name: '取消当前运行' })[0]);
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_START',
+        session_id: 'session-1',
+        reply_id: 'reply-cancel',
+        name: 'Leader Agent',
+        role: 'assistant',
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: '取消当前运行' }));
     await waitFor(() => {
       expect(api.cancelSession).toHaveBeenCalledWith('session-1');
     });
@@ -418,6 +351,168 @@ describe('Chat', () => {
 
     await waitFor(() => {
       expect(api.sendSessionMessage).toHaveBeenCalledWith('session-1', 'hello world');
+    });
+  });
+
+  test('updates runtime panel from incremental runtime events', async () => {
+    api.listSessions.mockResolvedValue({
+      sessions: [{ session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' }],
+    });
+    api.listTeams.mockResolvedValue({ teams: [] });
+    api.listWorkspaces.mockResolvedValue({ workspaces: [] });
+    api.getSessionDetail.mockResolvedValue({
+      session: { session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' },
+      team: { name: 'Default Team' },
+      messages: [],
+      runtime: { current_summary: '', current_plan: null, waiting_items: [], agent_statuses: [] },
+      workspace_status: { name: 'Project Alpha' },
+    });
+
+    render(<Chat />);
+    await screen.findByText('状态：idle');
+
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_START',
+        session_id: 'session-1',
+        reply_id: 'reply-runtime',
+        name: 'Leader Agent',
+        role: 'assistant',
+      });
+    });
+
+    await waitFor(() => {
+      const sessionSection = screen.getByText('Session').closest('section');
+      expect(within(sessionSection).getByText('状态：running', { selector: 'p' })).toBeTruthy();
+    });
+  });
+
+  test('shows cancel in the input area while a reply is running', async () => {
+    api.listSessions.mockResolvedValue({
+      sessions: [{ session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' }],
+    });
+    api.listTeams.mockResolvedValue({ teams: [] });
+    api.listWorkspaces.mockResolvedValue({ workspaces: [] });
+    api.getSessionDetail.mockResolvedValue({
+      session: { session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' },
+      team: { name: 'Default Team' },
+      messages: [],
+      runtime: { current_summary: '', current_plan: null, waiting_items: [], agent_statuses: [] },
+      workspace_status: { name: 'Project Alpha' },
+    });
+
+    render(<Chat />);
+    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
+
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_START',
+        session_id: 'session-1',
+        reply_id: 'reply-running',
+        name: 'Leader Agent',
+        role: 'assistant',
+      });
+    });
+
+    expect(screen.getByRole('button', { name: '取消当前运行' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '发送' })).toBeNull();
+  });
+
+  test('does not keep a stale stream overlay after cancel', async () => {
+    api.listSessions.mockResolvedValue({
+      sessions: [{ session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' }],
+    });
+    api.listTeams.mockResolvedValue({ teams: [] });
+    api.listWorkspaces.mockResolvedValue({ workspaces: [] });
+    api.getSessionDetail.mockImplementation(() =>
+      Promise.resolve({
+        session: { session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' },
+        team: { name: 'Default Team' },
+        messages: [],
+        runtime: { current_summary: '', current_plan: null, waiting_items: [], agent_statuses: [] },
+        workspace_status: { name: 'Project Alpha' },
+      }),
+    );
+    api.cancelSession.mockResolvedValue({ status: 'cancelling' });
+
+    const user = userEvent.setup();
+    render(<Chat />);
+    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
+
+    act(() => {
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'REPLY_START',
+        session_id: 'session-1',
+        reply_id: 'reply-cancel',
+        name: 'Leader Agent',
+        role: 'assistant',
+      });
+      MockEventSource.instances.at(-1).emit('session.event', {
+        type: 'TEXT_BLOCK_DELTA',
+        reply_id: 'reply-cancel',
+        block_id: 'block-cancel',
+        delta: 'Half way',
+      });
+    });
+
+    expect(screen.getByText('Half way', { selector: '.message-bubble' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '取消当前运行' }));
+    await waitFor(() => {
+      expect(api.cancelSession).toHaveBeenCalledWith('session-1');
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector('.typing-bubble')).toBeNull();
+    });
+  });
+
+  test('keeps optimistic user bubble visible until the real user message arrives', async () => {
+    let sendResolved = false;
+    api.listSessions.mockResolvedValue({
+      sessions: [{ session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' }],
+    });
+    api.listTeams.mockResolvedValue({ teams: [] });
+    api.listWorkspaces.mockResolvedValue({ workspaces: [] });
+    api.getSessionDetail.mockImplementation(() =>
+      Promise.resolve({
+        session: { session_id: 'session-1', name: 'Existing Session', status: 'idle', updated_at: '2026-06-17T18:00:00' },
+        team: { name: 'Default Team' },
+        messages: sendResolved
+          ? [
+              {
+                id: 'message-real-user',
+                role: 'user',
+                name: 'user',
+                content: [{ type: 'text', text: 'hello world' }],
+              },
+            ]
+          : [],
+        runtime: { current_summary: '', current_plan: null, waiting_items: [], agent_statuses: [] },
+        workspace_status: { name: 'Project Alpha' },
+      }),
+    );
+    api.sendSessionMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            sendResolved = true;
+            resolve({ status: 'accepted' });
+          }, 50);
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<Chat />);
+
+    await screen.findByRole('heading', { level: 3, name: 'Existing Session' });
+    await user.type(screen.getByPlaceholderText('发送消息...'), 'hello world');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(screen.getByText('hello world', { selector: '.message-bubble' })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(screen.getByText('hello world', { selector: '.message-bubble' })).toBeTruthy();
     });
   });
 });

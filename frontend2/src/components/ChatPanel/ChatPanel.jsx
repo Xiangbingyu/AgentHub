@@ -1,4 +1,4 @@
-import { ClipboardList, MoreHorizontal, Paperclip, Send, Smile, Wrench } from 'lucide-react';
+import { ClipboardList, MoreHorizontal, Paperclip, Send, Smile, Square, Wrench } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import './ChatPanel.css';
 
@@ -66,16 +66,23 @@ function renderTimelineItem(item) {
       <div className={`message-avatar ${isUser ? 'self' : ''}`}>{isUser ? '你' : 'AI'}</div>
       <div className="message-content">
         <div className="message-name">{item.author}</div>
-        <div className="message-bubble">{item.content}</div>
+        <div className="message-bubble">
+          {item.content}
+          {item.streaming ? <span className="message-stream-cursor">|</span> : null}
+        </div>
       </div>
     </div>
   );
 }
 
-export default function ChatPanel({ session, messages, sending, onSendMessage }) {
+export default function ChatPanel({ session, messages, sending, onSendMessage, onCancelSession, cancelPending }) {
   const [draft, setDraft] = useState('');
   const planSteps = useMemo(
     () => messages.findLast?.((item) => item.kind === 'plan')?.steps?.length ?? 0,
+    [messages],
+  );
+  const hasStreamingAssistantMessage = useMemo(
+    () => messages.some((message) => message.role === 'agent' && message.streaming),
     [messages],
   );
 
@@ -111,7 +118,7 @@ export default function ChatPanel({ session, messages, sending, onSendMessage })
 
       <div className="chat-messages">
         {messages.map((message) => renderTimelineItem(message))}
-        {sending ? (
+        {sending && !hasStreamingAssistantMessage ? (
           <div className="message-wrapper receive">
             <div className="message-avatar">AI</div>
             <div className="message-content">
@@ -149,10 +156,17 @@ export default function ChatPanel({ session, messages, sending, onSendMessage })
         />
         <div className="chat-input-actions">
           <div className="chat-mock-note">当前计划步骤：{planSteps}</div>
-          <button type="button" className="send-btn" disabled={!draft.trim() || sending} onClick={handleSend}>
-            <Send size={16} />
-            {sending ? '继续发送' : '发送'}
-          </button>
+          {sending ? (
+            <button type="button" className="send-btn" onClick={onCancelSession} disabled={cancelPending}>
+              <Square size={16} />
+              {cancelPending ? '取消中...' : '取消当前运行'}
+            </button>
+          ) : (
+            <button type="button" className="send-btn" disabled={!draft.trim()} onClick={handleSend}>
+              <Send size={16} />
+              发送
+            </button>
+          )}
         </div>
       </div>
     </div>

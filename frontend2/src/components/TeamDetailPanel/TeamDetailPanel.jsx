@@ -1,5 +1,7 @@
 import { Bot, Cpu, ShieldCheck, Wrench } from 'lucide-react';
 import { useState } from 'react';
+import DetailPanelShell from '../ui/DetailPanelShell';
+import PrimaryButton from '../ui/PrimaryButton';
 import './TeamDetailPanel.css';
 
 export default function TeamDetailPanel({ team, onCreateTeam }) {
@@ -23,72 +25,66 @@ export default function TeamDetailPanel({ team, onCreateTeam }) {
   }
 
   return (
-    <section className="team-detail">
-      <div className="team-detail-header">
-        <div>
-          <h3>{team?.name ?? '未选择 Team'}</h3>
-          <p>{team?.description ?? '选择左侧 Team 查看 leader、members 与能力边界。'}</p>
-        </div>
-        {team ? <span className="team-detail-tag">Product Team</span> : null}
-      </div>
-
-      <div className="team-detail-content">
-        {!team ? (
-          <div className="team-detail-empty">当前没有选中的 Team。</div>
-        ) : (
-          <>
-            <div className="team-detail-grid">
-              <section className="team-section">
-                <div className="team-section-title"><Bot size={16} /><span>Leader</span></div>
-                <p>{team.leader_agent_id}</p>
-              </section>
-
-              <section className="team-section">
-                <div className="team-section-title"><ShieldCheck size={16} /><span>Members</span></div>
-                {team.member_agent_ids.map((member) => (
-                  <p key={member}>{member}</p>
-                ))}
-              </section>
-            </div>
-
-            <div className="team-detail-grid">
-              <section className="team-section">
-                <div className="team-section-title"><Cpu size={16} /><span>Model Config</span></div>
-                <p>当前后端第一期还没有对外暴露 team 级 model config 详情。</p>
-                <p>这里保留为页面壳，后续可在 team detail 接口完善后补充。</p>
-              </section>
-
-              <section className="team-section">
-                <div className="team-section-title"><Wrench size={16} /><span>Capabilities</span></div>
-                <p>tool policy keys: {Object.keys(team.enabled_tool_policy ?? {}).join(', ') || '—'}</p>
-                <p>mcps: {(team.enabled_mcp_refs ?? []).join(', ') || '—'}</p>
-                <p>skills: {(team.enabled_skill_refs ?? []).join(', ') || '—'}</p>
-              </section>
-            </div>
-
-            <section className="team-section team-create-mock">
-              <div className="team-section-title"><Bot size={16} /><span>Create Team（Mock）</span></div>
-              <div className="team-create-fields">
-                <input type="text" placeholder="Team 名称" value={name} onChange={(event) => setName(event.target.value)} />
-                <input
-                  type="text"
-                  placeholder="Leader Agent ID"
-                  value={leaderAgentId}
-                  onChange={(event) => setLeaderAgentId(event.target.value)}
-                />
-                <textarea
-                  placeholder="Member Agent IDs，逗号分隔"
-                  value={memberAgentIds}
-                  onChange={(event) => setMemberAgentIds(event.target.value)}
-                />
-              </div>
-              <button type="button" className="team-submit-btn" onClick={() => void handleCreate()}>
-                创建 Team
-              </button>
+    <DetailPanelShell
+      title={team?.name ?? '未选择 Team'}
+      description={team?.description ?? '选择左侧 Team 查看 leader、members 与能力边界。'}
+      tag={team ? 'Product Team' : ''}
+      emptyMessage="当前没有选中的 Team。"
+      className="team-detail"
+    >
+      {team ? (
+        <>
+          <div className="detail-grid">
+            <section className="detail-card">
+              <div className="detail-card-title"><Bot size={16} /><span>Leader</span></div>
+              <p>{team.leader_agent_id}</p>
             </section>
-          </>
-        )}
-      </div>
-    </section>
+
+            <section className="detail-card">
+              <div className="detail-card-title"><ShieldCheck size={16} /><span>Members</span></div>
+              {team.member_agent_ids.map((member) => (
+                <p key={member}>{member}</p>
+              ))}
+            </section>
+          </div>
+
+          <div className="detail-grid">
+            <section className="detail-card">
+              <div className="detail-card-title"><Cpu size={16} /><span>Model Config</span></div>
+              <p>当前后端第一期还没有对外暴露 team 级 model config 详情。</p>
+              <p>这里保留为页面壳，后续可在 team detail 接口完善后补充。</p>
+            </section>
+
+            <section className="detail-card">
+              <div className="detail-card-title"><Wrench size={16} /><span>Capabilities</span></div>
+              <p>tool policy keys: {Object.keys(team.enabled_tool_policy ?? {}).join(', ') || '—'}</p>
+              <p>mcps: {(team.enabled_mcp_refs ?? []).join(', ') || '—'}</p>
+              <p>skills: {(team.enabled_skill_refs ?? []).join(', ') || '—'}</p>
+            </section>
+          </div>
+
+          <section className="detail-card team-create-mock">
+            <div className="detail-card-title"><Bot size={16} /><span>Create Team（Mock）</span></div>
+            <div className="team-create-fields">
+              <input type="text" placeholder="Team 名称" value={name} onChange={(event) => setName(event.target.value)} />
+              <input
+                type="text"
+                placeholder="Leader Agent ID"
+                value={leaderAgentId}
+                onChange={(event) => setLeaderAgentId(event.target.value)}
+              />
+              <textarea
+                placeholder="Member Agent IDs，逗号分隔"
+                value={memberAgentIds}
+                onChange={(event) => setMemberAgentIds(event.target.value)}
+              />
+            </div>
+            <PrimaryButton className="team-submit-btn" onClick={() => void handleCreate()}>
+              新建 Team
+            </PrimaryButton>
+          </section>
+        </>
+      ) : null}
+    </DetailPanelShell>
   );
 }

@@ -3,9 +3,7 @@ import './RuntimePanel.css';
 
 export default function RuntimePanel({
   runtime,
-  onCancelSession,
   onResolveWaitingItem,
-  cancelPending,
   waitingActionId,
 }) {
   return (
@@ -27,15 +25,6 @@ export default function RuntimePanel({
               <p>标题：{runtime.session_title}</p>
               <p>状态：{runtime.session_status}</p>
               <p>Team：{runtime.session_team}</p>
-              <button
-                type="button"
-                className="runtime-action-btn"
-                onClick={onCancelSession}
-                disabled={cancelPending}
-                aria-label="取消当前运行"
-              >
-                {cancelPending ? '取消中...' : '取消当前运行'}
-              </button>
             </section>
 
             <section className="runtime-section">

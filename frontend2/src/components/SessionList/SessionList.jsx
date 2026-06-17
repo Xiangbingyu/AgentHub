@@ -1,5 +1,7 @@
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
+import PanelHeader from '../ui/PanelHeader';
+import PrimaryButton from '../ui/PrimaryButton';
 import './SessionList.css';
 
 export default function SessionList({
@@ -35,13 +37,19 @@ export default function SessionList({
 
   return (
     <aside className="session-list-container">
-      <div className="session-header">
-        <div className="header-top">
-          <h2>Sessions</h2>
-          <button type="button" className="session-create-btn" onClick={onOpenCreate}>
-            <Plus size={14} />
+      <PanelHeader
+        title="Sessions"
+        subtitle="当前 Session 列表，可快速搜索和创建新的会话。"
+        action={
+          <PrimaryButton icon={Plus} onClick={onOpenCreate}>
             新建
-          </button>
+          </PrimaryButton>
+        }
+      >
+        <span className="panel-header-meta">{sessions.length} 个 Session</span>
+        <div className="search-bar">
+          <Search size={16} className="search-icon" />
+          <input type="text" placeholder="搜索会话（Mock）" readOnly />
         </div>
         {isCreateOpen ? (
           <form className="session-create-form" onSubmit={handleSubmit}>
@@ -86,9 +94,8 @@ export default function SessionList({
               </select>
             </label>
             {createError ? <p className="session-form-error">{createError}</p> : null}
-            <button
+            <PrimaryButton
               type="submit"
-              className="session-create-btn"
               disabled={
                 createPending ||
                 createDisabled ||
@@ -97,15 +104,11 @@ export default function SessionList({
                 !effectiveTeamId
               }
             >
-              {createPending ? '创建中...' : '创建 session'}
-            </button>
+              {createPending ? '创建中...' : '新建 Session'}
+            </PrimaryButton>
           </form>
         ) : null}
-        <div className="search-bar">
-          <Search size={16} className="search-icon" />
-          <input type="text" placeholder="搜索会话（Mock）" readOnly />
-        </div>
-      </div>
+      </PanelHeader>
 
       <div className="session-list">
         {sessions.length === 0 ? (

@@ -1,19 +1,22 @@
 import { Plus, Users } from 'lucide-react';
+import PanelHeader from '../ui/PanelHeader';
+import PrimaryButton from '../ui/PrimaryButton';
 import './TeamList.css';
 
 export default function TeamList({ teams, activeTeamId, onSelectTeam }) {
   return (
     <aside className="team-list-container">
-      <div className="team-list-header">
-        <div className="team-header-top">
-          <h2>Teams</h2>
-          <button type="button" className="team-create-btn">
-            <Plus size={14} />
-            创建
-          </button>
-        </div>
-        <p className="team-list-hint">Product Team 列表。当前只做 mock 展示和创建入口外观。</p>
-      </div>
+      <PanelHeader
+        title="Teams"
+        subtitle="Product Team 列表。当前只做 mock 展示和创建入口外观。"
+        action={
+          <PrimaryButton icon={Plus}>
+            新建
+          </PrimaryButton>
+        }
+      >
+        <span className="panel-header-meta">{teams.length} 个 Team</span>
+      </PanelHeader>
 
       <div className="team-list-body">
         {teams.map((team) => (

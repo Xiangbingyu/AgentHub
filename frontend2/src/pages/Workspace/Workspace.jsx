@@ -3,6 +3,7 @@ import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { api } from '../../utils/api';
 import WorkspaceBrowser from '../../components/WorkspaceBrowser/WorkspaceBrowser';
 import WorkspaceDetailPanel from '../../components/WorkspaceDetailPanel/WorkspaceDetailPanel';
+import PrimaryButton from '../../components/ui/PrimaryButton';
 import './Workspace.css';
 
 function buildTreeNodes(workspaceId, entries, treeMap, expandedMap) {
@@ -170,9 +171,7 @@ export default function Workspace() {
       ) : error ? (
         <div className="workspace-loading">
           <p>{error}</p>
-          <button type="button" className="workspace-primary-btn" onClick={() => void reload()}>
-            重试
-          </button>
+          <PrimaryButton onClick={() => void reload()}>重试</PrimaryButton>
         </div>
       ) : (
         <>

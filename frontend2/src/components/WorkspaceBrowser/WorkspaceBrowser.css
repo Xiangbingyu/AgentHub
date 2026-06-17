@@ -1,6 +1,6 @@
 .workspace-browser-nav {
   position: relative;
-  width: 340px;
+  width: var(--fs-left-panel-width);
   background: var(--fs-bg-list);
   border-right: 1px solid var(--fs-border);
   display: flex;
@@ -9,49 +9,9 @@
   flex-shrink: 0;
 }
 
-.workspace-browser-nav-header {
-  padding: 16px 16px 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.workspace-browser-nav-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--fs-text-main);
-}
-
-.workspace-browser-nav-header p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--fs-text-secondary);
-}
-
-.workspace-primary-btn {
-  border: none;
-  border-radius: 999px;
-  padding: 8px 14px;
-  background: #10233f;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.workspace-count {
-  align-self: flex-start;
-  margin: 0 16px 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--fs-bg-sidebar);
-  color: var(--fs-text-secondary);
-  font-size: 12px;
-}
-
 .workspace-create-form {
-  margin: 0 16px 12px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px;
   border: 1px solid var(--fs-border);
   border-radius: 12px;

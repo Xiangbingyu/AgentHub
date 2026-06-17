@@ -156,7 +156,7 @@ export const mockWorkspaceDetails = {
     type_label: 'Workspace',
     path: 'E:/Github/AgentHub-weon/frontend2',
     description: '状态：ready · 用于前端视觉复刻与后续接口接入',
-    bindings: ['当前聚焦页面：Team / Chat / Workspace mock shell'],
+    bindings: ['当前聚焦页面：Team / Session / Workspace mock shell'],
     preview_kind: 'note',
     preview: '这个 workspace 用来承载 frontend2 的 mock 页面实现。后续可以逐步接入真实后端接口。',
   },

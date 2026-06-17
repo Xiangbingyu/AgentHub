@@ -9,8 +9,9 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<MainLayout />}>
-          <Route index element={<Navigate to="/chat" replace />} />
-          <Route path="chat" element={<Chat />} />
+          <Route index element={<Navigate to="/session" replace />} />
+          <Route path="session" element={<Chat />} />
+          <Route path="chat" element={<Navigate to="/session" replace />} />
           <Route path="workspace" element={<Workspace />} />
           <Route path="team" element={<Team />} />
         </Route>

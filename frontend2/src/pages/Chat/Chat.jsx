@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { api } from '../../utils/api';
 import ChatPanel from '../../components/ChatPanel/ChatPanel';
 import { renderContentBlocks } from '../../utils/message';
 import RuntimePanel from '../../components/RuntimePanel/RuntimePanel';
 import SessionList from '../../components/SessionList/SessionList';
+import PrimaryButton from '../../components/ui/PrimaryButton';
 import './Chat.css';
 
 export default function Chat() {
@@ -24,7 +25,10 @@ export default function Chat() {
   const [cancelPending, setCancelPending] = useState(false);
   const [waitingActionId, setWaitingActionId] = useState('');
   const [optimisticMessages, setOptimisticMessages] = useState([]);
+  const [streamingMessages, setStreamingMessages] = useState({});
+  const [runtimePatch, setRuntimePatch] = useState(null);
   const activeSessionId = selectedSessionId || sessions[0]?.session_id || '';
+  const hasDetailRef = useRef(false);
 
   const loadTeams = useCallback(() => api.listTeams(), []);
   const { data: teamsPayload, loading: teamsLoading } = useAsyncResource(loadTeams, { teams: [] });
@@ -49,7 +53,7 @@ export default function Chat() {
     ? {
         session_id: detail.session.session_id,
         title: detail.session.name,
-        status: detail.session.status,
+        status: runtimePatch?.session_status ?? detail.session.status,
         updated_at: detail.session.updated_at,
         summary: detail.runtime?.current_summary ?? '',
       }
@@ -63,26 +67,41 @@ export default function Chat() {
       author: message.role === 'user' ? '你' : message.name || 'Leader Agent',
       content: renderContentBlocks(message.content),
     }));
+    const persistedUserContents = new Set(
+      baseMessages.filter((message) => message.role === 'user').map((message) => message.content),
+    );
+    const persistedIds = new Set(baseMessages.map((message) => message.message_id));
+    const liveAssistantMessages = Object.values(streamingMessages).filter(
+      (message) => message.session_id === activeSessionId && !persistedIds.has(message.message_id),
+    );
     return [
       ...baseMessages,
-      ...optimisticMessages.filter((message) => message.session_id === activeSessionId),
+      ...optimisticMessages.filter(
+        (message) =>
+          message.session_id === activeSessionId && !persistedUserContents.has(message.content),
+      ),
+      ...liveAssistantMessages,
     ];
-  }, [activeSessionId, detail, optimisticMessages]);
+  }, [activeSessionId, detail, optimisticMessages, streamingMessages]);
 
   const runtime = detail
     ? {
         session_title: detail.session.name,
-        session_status: detail.session.status,
+        session_status: runtimePatch?.session_status ?? detail.session.status,
         session_team: detail.team?.name ?? '—',
         session_workspace: detail.workspace_status?.name ?? '—',
-        agent_status: detail.session.status,
-        task_status: detail.session.status,
+        agent_status: runtimePatch?.session_status ?? detail.session.status,
+        task_status: runtimePatch?.session_status ?? detail.session.status,
         plan_steps: detail.runtime?.current_plan?.steps?.length ?? 0,
-        current_summary: detail.runtime?.current_summary ?? '暂无 summary',
-        waiting_items: detail.runtime?.waiting_items ?? [],
-        agent_statuses: detail.runtime?.agent_statuses ?? [],
+        current_summary: runtimePatch?.current_summary ?? detail.runtime?.current_summary ?? '暂无 summary',
+        waiting_items: runtimePatch?.waiting_items ?? detail.runtime?.waiting_items ?? [],
+        agent_statuses: runtimePatch?.agent_statuses ?? detail.runtime?.agent_statuses ?? [],
       }
     : null;
+
+  useEffect(() => {
+    hasDetailRef.current = Boolean(detail);
+  }, [detail]);
 
   async function handleSendMessage(content) {
     if (!activeSessionId) return;
@@ -97,11 +116,13 @@ export default function Chat() {
     setOptimisticMessages((current) => [...current, optimisticMessage]);
     try {
       await api.sendSessionMessage(activeSessionId, content);
-      await Promise.all([reloadSessions(), reloadDetail()]);
-    } finally {
+      void reloadSessions();
+      void reloadDetail();
+    } catch (error) {
       setOptimisticMessages((current) =>
         current.filter((message) => message.message_id !== optimisticMessage.message_id),
       );
+      throw error;
     }
   }
 
@@ -126,6 +147,11 @@ export default function Chat() {
     if (!activeSessionId) return;
     setCancelPending(true);
     try {
+      setRuntimePatch((current) => ({
+        ...current,
+        session_status: 'idle',
+        waiting_items: [],
+      }));
       await api.cancelSession(activeSessionId);
       await Promise.all([reloadSessions(), reloadDetail()]);
     } finally {
@@ -150,17 +176,126 @@ export default function Chat() {
     }
 
     const eventSource = new EventSource(api.buildSessionStreamUrl(activeSessionId));
-    const refresh = () => {
+    const reconcileSnapshot = () => {
       void reloadSessions();
       void reloadDetail();
     };
 
-    eventSource.addEventListener('session.ready', refresh);
-    eventSource.addEventListener('session.event', refresh);
+    const upsertStreamingMessage = (messageId, patch) => {
+      setStreamingMessages((current) => ({
+        ...current,
+        [messageId]: {
+          ...current[messageId],
+          session_id: activeSessionId,
+          ...patch,
+        },
+      }));
+    };
+
+    const handleSessionReady = () => {
+      if (!hasDetailRef.current) {
+        reconcileSnapshot();
+      }
+    };
+
+    const handleSessionEvent = (rawEvent) => {
+      let payload;
+      try {
+        payload = JSON.parse(rawEvent.data);
+      } catch {
+        reconcileSnapshot();
+        return;
+      }
+
+      if (!payload?.type) {
+        reconcileSnapshot();
+        return;
+      }
+
+      if (payload.type === 'REPLY_START') {
+        upsertStreamingMessage(payload.reply_id, {
+          message_id: payload.reply_id,
+          kind: 'message',
+          role: 'agent',
+          author: payload.name || 'Leader Agent',
+          content: '',
+          streaming: true,
+        });
+        setRuntimePatch((current) => ({
+          ...current,
+          session_status: 'running',
+        }));
+        return;
+      }
+
+      if (payload.type === 'TEXT_BLOCK_DELTA') {
+        setStreamingMessages((current) => ({
+          ...current,
+          [payload.reply_id]: {
+            ...current[payload.reply_id],
+            session_id: activeSessionId,
+            message_id: payload.reply_id,
+            kind: 'message',
+            role: 'agent',
+            author: current[payload.reply_id]?.author || 'Leader Agent',
+            content: `${current[payload.reply_id]?.content || ''}${payload.delta || ''}`,
+            streaming: true,
+          },
+        }));
+        return;
+      }
+
+      if (payload.type === 'REPLY_END') {
+        setStreamingMessages((current) => ({
+          ...current,
+          [payload.reply_id]: {
+            ...current[payload.reply_id],
+            streaming: false,
+          },
+        }));
+        setRuntimePatch((current) => ({
+          ...current,
+          session_status: 'idle',
+        }));
+        reconcileSnapshot();
+        return;
+      }
+
+      if (payload.type === 'REQUIRE_USER_CONFIRM' || payload.type === 'REQUIRE_EXTERNAL_EXECUTION') {
+        const waitingItems = (payload.tool_calls ?? []).map((toolCall) => ({
+          waiting_id: toolCall.id,
+          title:
+            payload.type === 'REQUIRE_USER_CONFIRM'
+              ? `Confirm tool call: ${toolCall.name}`
+              : `Await external result: ${toolCall.name}`,
+          status: 'pending',
+          message:
+            payload.type === 'REQUIRE_USER_CONFIRM'
+              ? `Tool ${toolCall.name} requires confirmation.`
+              : `Tool ${toolCall.name} is waiting for external execution result.`,
+        }));
+        setRuntimePatch((current) => ({
+          ...current,
+          session_status: 'waiting',
+          waiting_items: waitingItems,
+        }));
+        return;
+      }
+
+      if (payload.type === 'HINT_BLOCK') {
+        reconcileSnapshot();
+        return;
+      }
+
+      reconcileSnapshot();
+    };
+
+    eventSource.addEventListener('session.ready', handleSessionReady);
+    eventSource.addEventListener('session.event', handleSessionEvent);
 
     return () => {
-      eventSource.removeEventListener('session.ready', refresh);
-      eventSource.removeEventListener('session.event', refresh);
+      eventSource.removeEventListener('session.ready', handleSessionReady);
+      eventSource.removeEventListener('session.event', handleSessionEvent);
       eventSource.close();
     };
   }, [activeSessionId, reloadDetail, reloadSessions]);
@@ -198,6 +333,10 @@ export default function Chat() {
               messages={messages}
               sending={activeSession?.status === 'running'}
               onSendMessage={handleSendMessage}
+              onCancelSession={() => {
+                void handleCancelSession();
+              }}
+              cancelPending={cancelPending}
             />
           ) : (
           <ChatPanel session={activeSession} messages={[]} sending={true} />
@@ -205,9 +344,9 @@ export default function Chat() {
         ) : sessionsError || detailError ? (
           <div className="chat-panel-error">
             <p>{sessionsError || detailError}</p>
-            <button type="button" className="session-create-btn" onClick={() => { void reloadSessions(); void reloadDetail(); }}>
+            <PrimaryButton onClick={() => { void reloadSessions(); void reloadDetail(); }}>
               重试
-            </button>
+            </PrimaryButton>
           </div>
         ) : (
           <ChatPanel
@@ -215,19 +354,19 @@ export default function Chat() {
             messages={messages}
             sending={activeSession?.status === 'running'}
             onSendMessage={handleSendMessage}
+            onCancelSession={() => {
+              void handleCancelSession();
+            }}
+            cancelPending={cancelPending}
           />
         )}
       </div>
       <div className="chat-page-runtime">
         <RuntimePanel
           runtime={runtime}
-          onCancelSession={() => {
-            void handleCancelSession();
-          }}
           onResolveWaitingItem={(waitingId, confirmed) => {
             void handleResolveWaitingItem(waitingId, confirmed);
           }}
-          cancelPending={cancelPending}
           waitingActionId={waitingActionId}
         />
       </div>

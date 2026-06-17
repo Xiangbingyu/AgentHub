@@ -52,7 +52,7 @@ export const mockMessages = [
     goal: '在 frontend2 中复刻 session 页面与 workspace 页面视觉结构。',
     steps: [
       { step_id: 'p-1', content: '搭建路由与主布局', status: 'completed' },
-      { step_id: 'p-2', content: '实现 Chat 页 mock 组件', status: 'in_progress' },
+      { step_id: 'p-2', content: '实现 Session 页 mock 组件', status: 'in_progress' },
       { step_id: 'p-3', content: '实现 Workspace 页 mock 组件', status: 'pending' },
     ],
     file_path: 'docs/superpowers/specs/2026-06-17-frontend2-mock-page-replica-design.md',

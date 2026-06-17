@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from agentscope.app.storage import RedisStorage
+from agentscope.event import ReplyEndEvent, ReplyStartEvent, TextBlockDeltaEvent, TextBlockStartEvent
 from agentscope.message import AssistantMsg, ToolCallBlock
 from fastapi.testclient import TestClient
 
@@ -422,6 +423,47 @@ def test_send_message_returns_202_before_slow_runtime_finishes() -> None:
     assert not finished.is_set()
 
 
+def test_send_message_does_not_fail_when_agentscope_background_manager_requires_message_bus() -> None:
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/workspaces",
+        json={"name": "Project Alpha"},
+    ).json()
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Backend Team",
+            "leader_agent_id": "leader-agent",
+            "member_agent_ids": [],
+        },
+    ).json()
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "name": "Background Manager Compatibility",
+            "workspace_id": workspace["workspace_id"],
+            "team_id": team["team_id"],
+        },
+    ).json()
+
+    response = client.post(
+        f"/api/v1/sessions/{created['session_id']}/messages",
+        json={"content": "hello runtime"},
+    )
+    assert response.status_code == 202
+
+    deadline = time.time() + 3.0
+    payload = None
+    while time.time() < deadline:
+        payload = client.get(f"/api/v1/sessions/{created['session_id']}").json()
+        if payload["session"]["status"] != "running":
+            break
+        time.sleep(0.1)
+
+    assert payload is not None
+    assert payload["session"]["status"] != "failed"
+
+
 def test_cancel_interrupts_slow_runtime_and_session_recovers_from_cancelling() -> None:
     cancelled = threading.Event()
 
@@ -481,6 +523,296 @@ def test_cancel_interrupts_slow_runtime_and_session_recovers_from_cancelling() -
 
     assert cancelled.is_set()
     assert payload["session"]["status"] == "idle"
+
+
+def test_cancel_preserves_partial_assistant_reply_in_history() -> None:
+    partial_reply_written = threading.Event()
+    finished = threading.Event()
+
+    class PartialReplyChatRuntime:
+        async def run_user_message(self, *, user_id: str, session_id: str, agent_id: str, content: str) -> None:
+            from agentscope.app.storage import RedisStorage
+            from agentscope.message import AssistantMsg, TextBlock
+            from app.infrastructure.redis.client import get_redis_client
+
+            redis = get_redis_client()
+            storage = RedisStorage(connection_pool=redis.connection_pool)
+            async with storage:
+                await storage.upsert_message(
+                    user_id,
+                    session_id,
+                    AssistantMsg(
+                        id="partial-reply-1",
+                        name="leader-agent",
+                        content=[TextBlock(text="半截回复")],
+                    ),
+                )
+            partial_reply_written.set()
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                finished.set()
+                raise
+
+        async def publish_cancel(self, session_id: str) -> None:
+            return None
+
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/workspaces",
+        json={"name": "Project Alpha"},
+    ).json()
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Backend Team",
+            "leader_agent_id": "leader-agent",
+            "member_agent_ids": [],
+        },
+    ).json()
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "name": "Cancelable Partial Reply",
+            "workspace_id": workspace["workspace_id"],
+            "team_id": team["team_id"],
+        },
+    ).json()
+
+    with patch(
+        "app.application.services.AppServices.chat_runtime",
+        return_value=PartialReplyChatRuntime(),
+    ):
+        send_response = client.post(
+            f"/api/v1/sessions/{created['session_id']}/messages",
+            json={"content": "long run"},
+        )
+        assert send_response.status_code == 202
+        assert partial_reply_written.wait(timeout=3)
+        cancel_response = client.post(f"/api/v1/sessions/{created['session_id']}/cancel")
+
+    assert cancel_response.status_code == 202
+
+    payload = _wait_for_session_condition(
+        client,
+        created["session_id"],
+        lambda detail: detail["session"]["status"] == "idle",
+        timeout_secs=3.0,
+    )
+
+    assert finished.is_set()
+    assert any(
+        message["role"] == "assistant" and "半截回复" in "".join(
+            block.get("text", "") for block in message["content"] if block.get("type") == "text"
+        )
+        for message in payload["messages"]
+    )
+
+
+def test_cancel_keeps_reply_message_when_run_is_cancelled_before_completion() -> None:
+    cancelled = threading.Event()
+
+    class CancelableChatRuntime:
+        async def run_user_message(self, *, user_id: str, session_id: str, agent_id: str, content: str) -> None:
+            from agentscope.app.storage import RedisStorage
+            from agentscope.message import AssistantMsg, TextBlock
+            from app.infrastructure.redis.client import get_redis_client
+
+            redis = get_redis_client()
+            storage = RedisStorage(connection_pool=redis.connection_pool)
+            async with storage:
+                await storage.upsert_message(
+                    user_id,
+                    session_id,
+                    AssistantMsg(
+                        id="cancel-reply-1",
+                        name="leader-agent",
+                        content=[TextBlock(text="处理中回复")],
+                    ),
+                )
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        async def publish_cancel(self, session_id: str) -> None:
+            return None
+
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/workspaces",
+        json={"name": "Project Alpha"},
+    ).json()
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Backend Team",
+            "leader_agent_id": "leader-agent",
+            "member_agent_ids": [],
+        },
+    ).json()
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "name": "Cancelable Partial Reply",
+            "workspace_id": workspace["workspace_id"],
+            "team_id": team["team_id"],
+        },
+    ).json()
+
+    with patch(
+        "app.application.services.AppServices.chat_runtime",
+        return_value=CancelableChatRuntime(),
+    ):
+        send_response = client.post(
+            f"/api/v1/sessions/{created['session_id']}/messages",
+            json={"content": "long run"},
+        )
+        assert send_response.status_code == 202
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            detail = client.get(f"/api/v1/sessions/{created['session_id']}").json()
+            if any(message["role"] == "assistant" for message in detail["messages"]):
+                break
+            time.sleep(0.1)
+        cancel_response = client.post(f"/api/v1/sessions/{created['session_id']}/cancel")
+
+    assert cancel_response.status_code == 202
+    assert cancelled.is_set()
+
+    payload = _wait_for_session_condition(
+        client,
+        created["session_id"],
+        lambda detail: detail["session"]["status"] == "idle",
+        timeout_secs=3.0,
+    )
+
+    assert any(message["role"] == "assistant" for message in payload["messages"])
+
+
+def test_cancel_preserves_reply_rebuilt_from_stream_events() -> None:
+    cancelled = threading.Event()
+
+    class EventPublishingChatRuntime:
+        async def persist_partial_reply(self, *, user_id: str, session_id: str) -> None:
+            from agentscope.app.message_bus import RedisMessageBus
+            from agentscope.app.storage import RedisStorage
+            from agentscope.message import AssistantMsg
+            from app.infrastructure.redis.client import get_redis_client
+
+            redis = get_redis_client()
+            storage = RedisStorage(connection_pool=redis.connection_pool)
+            message_bus = RedisMessageBus(connection_pool=redis.connection_pool)
+            async with storage, message_bus:
+                entries = await message_bus.session_read_events(session_id)
+                reply = AssistantMsg(id="stream-reply-1", name="leader-agent", content=[])
+                for _entry_id, payload in entries:
+                    reply_id = payload.get("reply_id")
+                    if reply_id != "stream-reply-1":
+                        continue
+                    event_type = payload.get("type")
+                    if event_type == ReplyStartEvent.model_fields["type"].default:
+                        continue
+                    if event_type == TextBlockStartEvent.model_fields["type"].default:
+                        reply.append_event(TextBlockStartEvent.model_validate(payload))
+                    elif event_type == TextBlockDeltaEvent.model_fields["type"].default:
+                        reply.append_event(TextBlockDeltaEvent.model_validate(payload))
+                if reply.content:
+                    await storage.upsert_message(user_id, session_id, reply)
+
+        async def run_user_message(self, *, user_id: str, session_id: str, agent_id: str, content: str) -> None:
+            from agentscope.app.message_bus import RedisMessageBus
+            from app.infrastructure.redis.client import get_redis_client
+
+            redis = get_redis_client()
+            message_bus = RedisMessageBus(connection_pool=redis.connection_pool)
+            async with message_bus:
+                await message_bus.session_publish_event(
+                    session_id,
+                    ReplyStartEvent(
+                        session_id=session_id,
+                        reply_id="stream-reply-1",
+                        name="leader-agent",
+                    ).model_dump(mode="json"),
+                )
+                await message_bus.session_publish_event(
+                    session_id,
+                    TextBlockStartEvent(
+                        reply_id="stream-reply-1",
+                        block_id="stream-block-1",
+                    ).model_dump(mode="json"),
+                )
+                await message_bus.session_publish_event(
+                    session_id,
+                    TextBlockDeltaEvent(
+                        reply_id="stream-reply-1",
+                        block_id="stream-block-1",
+                        delta="流式半截回复",
+                    ).model_dump(mode="json"),
+                )
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        async def publish_cancel(self, session_id: str) -> None:
+            return None
+
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/workspaces",
+        json={"name": "Project Alpha"},
+    ).json()
+    team = client.post(
+        "/api/v1/teams",
+        json={
+            "name": "Backend Team",
+            "leader_agent_id": "leader-agent",
+            "member_agent_ids": [],
+        },
+    ).json()
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "name": "Cancelable Stream Reply",
+            "workspace_id": workspace["workspace_id"],
+            "team_id": team["team_id"],
+        },
+    ).json()
+
+    with patch(
+        "app.application.services.AppServices.chat_runtime",
+        return_value=EventPublishingChatRuntime(),
+    ):
+        send_response = client.post(
+            f"/api/v1/sessions/{created['session_id']}/messages",
+            json={"content": "long run"},
+        )
+        assert send_response.status_code == 202
+        time.sleep(0.2)
+        cancel_response = client.post(f"/api/v1/sessions/{created['session_id']}/cancel")
+
+    assert cancel_response.status_code == 202
+    assert cancelled.is_set()
+
+    payload = _wait_for_session_condition(
+        client,
+        created["session_id"],
+        lambda detail: detail["session"]["status"] == "idle",
+        timeout_secs=3.0,
+    )
+
+    assert any(
+        message["role"] == "assistant" and "流式半截回复" in "".join(
+            block.get("text", "") for block in message["content"] if block.get("type") == "text"
+        )
+        for message in payload["messages"]
+    )
 
 
 def test_session_stream_returns_sse_response() -> None:

@@ -3,9 +3,11 @@ import threading
 import time
 from types import SimpleNamespace
 
-from agentscope.message import AssistantMsg, ToolCallBlock, UserMsg
+from agentscope.event import ReplyEndEvent, ReplyStartEvent, TextBlockDeltaEvent, TextBlockStartEvent
+from agentscope.message import AssistantMsg, TextBlock, ToolCallBlock, UserMsg
 
 from app.domain.sessions.models import ProductSessionRecord, WaitingItem
+from app.runtime.agentscope.chat_runtime import AgentScopeChatRuntime
 from app.runtime.agentscope.assembler import RuntimeAssembly
 from app.runtime.agentscope.state_runtime import AgentScopeSessionStateRuntime
 from app.services.runtime_service import RuntimeService
@@ -139,6 +141,113 @@ def test_runtime_service_send_message_returns_before_slow_runtime_finishes() -> 
     assert elapsed < 0.1
     assert finished.is_set()
     assert repository.record.status == "idle"
+
+
+def test_runtime_service_syncs_partial_assistant_reply_after_cancelled_run() -> None:
+    record = ProductSessionRecord(
+        session_id="session-1",
+        name="Demo",
+        team_id="team-1",
+        leader_agent_id="leader-agent",
+        workspace_id="workspace-1",
+        status="cancelling",
+    )
+    repository = StubSessionRepository(record)
+
+    reply_message = AssistantMsg(
+        id="reply-1",
+        name="leader-agent",
+        content=[TextBlock(text="partial reply")],
+    )
+    runtime_session = SimpleNamespace(
+        state=SimpleNamespace(
+            summary="",
+            context=[reply_message],
+            reply_id="reply-1",
+        ),
+    )
+
+    class StubStateRuntime:
+        async def get_runtime_session(self, user_id: str, session_id: str, agent_id: str):
+            del user_id, session_id, agent_id
+            return runtime_session
+
+    service = RuntimeService(
+        session_repository=repository,
+        state_runtime=StubStateRuntime(),
+        runtime_principal="local-user",
+    )
+
+    asyncio.run(
+        service._sync_runtime_state(
+            session_repository=repository,
+            session_id="session-1",
+            agent_id="leader-agent",
+            failed=False,
+        )
+    )
+
+    assert repository.record.status == "idle"
+    assert repository.record.current_summary_snapshot == ""
+
+
+def test_chat_runtime_rebuilds_partial_reply_from_replay_log() -> None:
+    persisted = []
+
+    class StubStorage:
+        async def upsert_message(self, user_id: str, session_id: str, message) -> None:
+            persisted.append((user_id, session_id, message))
+
+    class StubMessageBus:
+        async def session_read_events(self, session_id: str):
+            return [
+                (
+                    "1-0",
+                    ReplyStartEvent(
+                        session_id=session_id,
+                        reply_id="reply-1",
+                        name="leader-agent",
+                    ).model_dump(mode="json"),
+                ),
+                (
+                    "2-0",
+                    TextBlockStartEvent(
+                        reply_id="reply-1",
+                        block_id="block-1",
+                    ).model_dump(mode="json"),
+                ),
+                (
+                    "3-0",
+                    TextBlockDeltaEvent(
+                        reply_id="reply-1",
+                        block_id="block-1",
+                        delta="partial reply",
+                    ).model_dump(mode="json"),
+                ),
+                (
+                    "4-0",
+                    ReplyEndEvent(
+                        session_id=session_id,
+                        reply_id="reply-1",
+                    ).model_dump(mode="json"),
+                ),
+            ]
+
+    runtime = AgentScopeChatRuntime(redis_url="redis://127.0.0.1:6382/0", workspace_runtime=None)
+
+    asyncio.run(
+        runtime._persist_partial_reply_from_replay_log(
+            storage=StubStorage(),
+            message_bus=StubMessageBus(),
+            user_id="local-user",
+            session_id="session-1",
+        )
+    )
+
+    assert len(persisted) == 1
+    message = persisted[0][2]
+    assert message.id == "reply-1"
+    assert message.get_text_content() == "partial reply"
 
 
 def test_runtime_service_extract_waiting_items_scans_full_context_and_deduplicates() -> None:
