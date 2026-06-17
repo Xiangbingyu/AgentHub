@@ -1,0 +1,45 @@
+:root {
+  --fs-bg-sidebar: #eef0f3;
+  --fs-bg-list: #ffffff;
+  --fs-bg-chat: #f4f5f7;
+  --fs-border: #dee0e3;
+  --fs-primary: #3370ff;
+  --fs-text-main: #1f2329;
+  --fs-text-secondary: #8f959e;
+  --fs-hover: #e4e6ea;
+  --fs-active: #e1eaff;
+  --fs-active-text: #3370ff;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--fs-text-main);
+  background: var(--fs-bg-chat);
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+body.is-resizing-panels {
+  cursor: col-resize;
+  user-select: none;
+}

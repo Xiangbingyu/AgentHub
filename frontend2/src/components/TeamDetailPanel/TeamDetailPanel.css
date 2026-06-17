@@ -1,0 +1,135 @@
+.team-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: var(--fs-bg-chat);
+}
+
+.team-detail-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--fs-border);
+  height: 64px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+}
+
+.team-detail-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fs-text-main);
+}
+
+.team-detail-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--fs-text-secondary);
+}
+
+.team-detail-tag {
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: var(--fs-active);
+  color: var(--fs-active-text);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.team-detail-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.team-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.team-section {
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  padding: 16px;
+  background: #fff;
+}
+
+.team-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fs-text-main);
+}
+
+.team-section p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--fs-text-secondary);
+}
+
+.team-create-mock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.team-create-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.team-create-fields input,
+.team-create-fields textarea {
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  background: var(--fs-bg-chat);
+  padding: 12px;
+  color: var(--fs-text-secondary);
+}
+
+.team-create-fields textarea {
+  min-height: 96px;
+  resize: none;
+}
+
+.team-submit-btn {
+  align-self: flex-start;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #10233f;
+  color: #fff;
+  cursor: pointer;
+}
+
+.team-detail-empty {
+  min-height: 220px;
+  border: 2px dashed var(--fs-border);
+  border-radius: 8px;
+  background: var(--fs-bg-chat);
+  color: var(--fs-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+@media (max-width: 960px) {
+  .team-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}

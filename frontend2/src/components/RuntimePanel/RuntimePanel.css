@@ -1,0 +1,121 @@
+.runtime-panel {
+  width: 360px;
+  background: #fff;
+  border-left: 1px solid var(--fs-border);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.runtime-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--fs-border);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+}
+
+.runtime-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fs-text-main);
+}
+
+.runtime-content {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.runtime-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-text-secondary);
+  border: 2px dashed var(--fs-border);
+  border-radius: 8px;
+  background: var(--fs-bg-chat);
+  text-align: center;
+  padding: 24px;
+}
+
+.placeholder-icon {
+  margin-bottom: 16px;
+  color: var(--fs-primary);
+  opacity: 0.5;
+}
+
+.runtime-section {
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--fs-bg-chat);
+}
+
+.runtime-section h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fs-text-main);
+}
+
+.runtime-section p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--fs-text-secondary);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.runtime-section p:last-child {
+  margin-bottom: 0;
+}
+
+.runtime-waiting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.runtime-waiting-item + .runtime-waiting-item {
+  margin-top: 8px;
+  border-top: 1px solid var(--fs-border);
+}
+
+.runtime-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.runtime-action-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #10233f;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.runtime-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.runtime-action-btn-secondary {
+  background: var(--fs-bg-list);
+  color: var(--fs-text-main);
+  border: 1px solid var(--fs-border);
+}
